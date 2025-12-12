@@ -79,75 +79,75 @@ if TEXTUAL_AVAILABLE:
 
 
     class CommentTUI(App):
-    """Textual TUI application for comment review."""
+        """Textual TUI application for comment review."""
 
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-    
-    #comment-list {
-        width: 1fr;
-        height: 1fr;
-    }
-    
-    #comment-detail {
-        width: 1fr;
-        height: 1fr;
-        border: solid $primary;
-    }
-    
-    .sidebar {
-        width: 30%;
-        border-right: solid $primary;
-    }
-    
-    .main {
-        width: 70%;
-    }
-    """
+        CSS = """
+        Screen {
+            background: $surface;
+        }
+        
+        #comment-list {
+            width: 1fr;
+            height: 1fr;
+        }
+        
+        #comment-detail {
+            width: 1fr;
+            height: 1fr;
+            border: solid $primary;
+        }
+        
+        .sidebar {
+            width: 30%;
+            border-right: solid $primary;
+        }
+        
+        .main {
+            width: 70%;
+        }
+        """
 
-    BINDINGS = [
-        Binding("q", "quit", "Quit"),
-        Binding("f", "filter", "Filter"),
-        Binding("e", "edit", "Edit"),
-        Binding("d", "delete", "Delete"),
-        Binding("n", "next", "Next"),
-        Binding("p", "previous", "Previous"),
-    ]
+        BINDINGS = [
+            Binding("q", "quit", "Quit"),
+            Binding("f", "filter", "Filter"),
+            Binding("e", "edit", "Edit"),
+            Binding("d", "delete", "Delete"),
+            Binding("n", "next", "Next"),
+            Binding("p", "previous", "Previous"),
+        ]
 
-    def __init__(self, scan_result: ScanResult, *args, **kwargs):
-        """Initialize TUI with scan result."""
-        super().__init__(*args, **kwargs)
-        self.scan_result = scan_result
-        self.comments: List[Comment] = []
-        self.filtered_comments: List[Comment] = []
-        self._collect_comments()
+        def __init__(self, scan_result: ScanResult, *args, **kwargs):
+            """Initialize TUI with scan result."""
+            super().__init__(*args, **kwargs)
+            self.scan_result = scan_result
+            self.comments: List[Comment] = []
+            self.filtered_comments: List[Comment] = []
+            self._collect_comments()
 
-    def _collect_comments(self) -> None:
-        """Collect all comments from scan result."""
-        for file_stats in self.scan_result.per_file.values():
-            self.comments.extend(file_stats.comments)
-        self.filtered_comments = self.comments
+        def _collect_comments(self) -> None:
+            """Collect all comments from scan result."""
+            for file_stats in self.scan_result.per_file.values():
+                self.comments.extend(file_stats.comments)
+            self.filtered_comments = self.comments
 
-    def compose(self) -> ComposeResult:
-        """Compose the UI."""
-        yield Header()
-        with Horizontal():
-            with VerticalScroll(id="comment-list-container"):
-                yield Label("[bold]Comments[/bold]")
-                yield CommentList(self.filtered_comments, id="comment-list")
-            with VerticalScroll(id="comment-detail-container"):
-                yield Label("[bold]Comment Details[/bold]")
-                yield CommentDetail(id="comment-detail")
-        yield Footer()
+        def compose(self) -> ComposeResult:
+            """Compose the UI."""
+            yield Header()
+            with Horizontal():
+                with VerticalScroll(id="comment-list-container"):
+                    yield Label("[bold]Comments[/bold]")
+                    yield CommentList(self.filtered_comments, id="comment-list")
+                with VerticalScroll(id="comment-detail-container"):
+                    yield Label("[bold]Comment Details[/bold]")
+                    yield CommentDetail(id="comment-detail")
+            yield Footer()
 
-    def on_mount(self) -> None:
-        """Setup on mount."""
-        comment_list = self.query_one("#comment-list", CommentList)
-        if self.filtered_comments:
-            comment_list.focus()
-            self._show_comment(self.filtered_comments[0])
+        def on_mount(self) -> None:
+            """Setup on mount."""
+            comment_list = self.query_one("#comment-list", CommentList)
+            if self.filtered_comments:
+                comment_list.focus()
+                self._show_comment(self.filtered_comments[0])
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
             """Handle row selection."""
