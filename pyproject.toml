@@ -10,7 +10,7 @@ readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
-    {name = "sarat1kyan", url = "https://github.com/sarat1kyan"}
+    {name = "sarat1kyan"}
 ]
 keywords = ["code-analysis", "comments", "codebase", "cli", "tui"]
 classifiers = [
