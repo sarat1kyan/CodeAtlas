@@ -1,0 +1,2 @@
+"""CodeAtlas plugins directory."""
+
