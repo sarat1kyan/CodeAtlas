@@ -299,6 +299,8 @@ def scan(
         
         if security_result.total_issues > 0:
             console.print(f"[red]⚠️  Found {security_result.total_issues} security issues[/red]")
+            # Display detailed security results
+            _display_security_details(security_result)
         else:
             console.print("[green]✅ No security issues found[/green]")
     
@@ -310,6 +312,8 @@ def scan(
         
         if dependency_result.outdated_count > 0:
             console.print(f"[yellow]⚠️  {dependency_result.outdated_count} outdated dependencies[/yellow]")
+            # Display detailed dependency results
+            _display_dependencies_details(dependency_result)
         else:
             console.print("[green]✅ All dependencies up to date[/green]")
     
@@ -321,6 +325,8 @@ def scan(
         
         if quality_result.average_complexity > 10:
             console.print(f"[yellow]⚠️  High average complexity: {quality_result.average_complexity:.1f}[/yellow]")
+            # Display detailed quality results
+            _display_quality_details(quality_result)
         else:
             console.print(f"[green]✅ Code quality looks good (complexity: {quality_result.average_complexity:.1f})[/green]")
     
@@ -332,6 +338,8 @@ def scan(
         
         if license_result.incompatible_licenses:
             console.print(f"[red]⚠️  {len(license_result.incompatible_licenses)} incompatible licenses[/red]")
+            # Display detailed license results
+            _display_licenses_details(license_result)
         else:
             console.print("[green]✅ No license conflicts found[/green]")
     
@@ -343,6 +351,8 @@ def scan(
         
         if duplicates_result.duplication_percentage > 10:
             console.print(f"[yellow]⚠️  High duplication: {duplicates_result.duplication_percentage:.1f}%[/yellow]")
+            # Display detailed duplication results
+            _display_duplicates_details(duplicates_result)
         else:
             console.print(f"[green]✅ Duplication level acceptable ({duplicates_result.duplication_percentage:.1f}%)[/green]")
     
@@ -354,6 +364,8 @@ def scan(
         
         if deadcode_result.total_items > 0:
             console.print(f"[yellow]⚠️  Found {deadcode_result.total_items} dead code items[/yellow]")
+            # Display detailed dead code results
+            _display_deadcode_details(deadcode_result)
         else:
             console.print("[green]✅ No dead code detected[/green]")
     
@@ -421,6 +433,249 @@ def scan(
         import json
         output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
         console.print(f"[green]Also saved comprehensive JSON to {output}[/green]")
+
+
+def _display_security_details(result) -> None:
+    """Display detailed security scan results."""
+    from codeatlas.security_scanner import SecurityScanResult
+    
+    if not isinstance(result, SecurityScanResult) or result.total_issues == 0:
+        return
+    
+    # Summary table
+    summary_table = Table(
+        title="[bold red]🛡️ Security Summary[/bold red]",
+        show_header=True,
+        header_style="bold bright_red",
+        border_style="red",
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=25)
+    summary_table.add_column("Value", style="bright_white", justify="right", width=15)
+    
+    summary_table.add_row("Total Issues", f"[bold]{result.total_issues}[/bold]")
+    summary_table.add_row("Critical", f"[bold red]{result.issues_by_severity.get('critical', 0)}[/bold red]")
+    summary_table.add_row("High", f"[red]{result.issues_by_severity.get('high', 0)}[/red]")
+    summary_table.add_row("Medium", f"[yellow]{result.issues_by_severity.get('medium', 0)}[/yellow]")
+    summary_table.add_row("Low", f"[dim white]{result.issues_by_severity.get('low', 0)}[/dim white]")
+    summary_table.add_row("Dependency Vulns", f"[bold yellow]{len(result.dependency_vulnerabilities)}[/bold yellow]")
+    
+    console.print()
+    console.print(summary_table)
+    
+    # Show top issues by severity (limited)
+    if result.issues:
+        issues_by_severity_group = {"critical": [], "high": [], "medium": [], "low": []}
+        for issue in result.issues:
+            severity = issue.severity.lower()
+            if severity in issues_by_severity_group:
+                issues_by_severity_group[severity].append(issue)
+        
+        for severity_level in ["critical", "high"]:
+            issues = issues_by_severity_group.get(severity_level, [])[:10]  # Limit to 10
+            if not issues:
+                continue
+            
+            color, border_color, emoji = {
+                "critical": ("bold red", "red", "🔴"),
+                "high": ("red", "bright_red", "🟠"),
+            }.get(severity_level, ("white", "white", "•"))
+            
+            console.print()
+            issues_table = Table(
+                title=f"[{color}]{emoji} {severity_level.upper()} Issues (showing top 10)[/{color}]",
+                show_header=True,
+                header_style=f"bold {border_color}",
+                border_style=border_color,
+            )
+            issues_table.add_column("File", style="cyan", width=30, overflow="ellipsis")
+            issues_table.add_column("Line", justify="right", width=6)
+            issues_table.add_column("Description", style="white", width=50, overflow="ellipsis")
+            
+            for issue in issues:
+                file_display = issue.file_path
+                if len(file_display) > 28:
+                    file_display = "..." + file_display[-25:]
+                
+                issues_table.add_row(
+                    file_display,
+                    str(issue.line_number) if issue.line_number else "-",
+                    issue.description[:47] + "..." if len(issue.description) > 47 else issue.description,
+                )
+            
+            console.print(issues_table)
+            if len(issues_by_severity_group.get(severity_level, [])) > 10:
+                console.print(f"[dim]... and {len(issues_by_severity_group[severity_level]) - 10} more {severity_level} issues[/dim]")
+
+
+def _display_dependencies_details(result) -> None:
+    """Display detailed dependency results."""
+    from codeatlas.dependency_checker import DependencyCheckResult
+    
+    if not isinstance(result, DependencyCheckResult) or result.outdated_count == 0:
+        return
+    
+    console.print()
+    outdated_table = Table(
+        title="[bold yellow]⚠️ Outdated Dependencies[/bold yellow]",
+        show_header=True,
+        header_style="bold bright_yellow",
+        border_style="yellow",
+    )
+    outdated_table.add_column("Package", style="cyan", width=30)
+    outdated_table.add_column("Current", width=15)
+    outdated_table.add_column("Latest", style="green", width=15)
+    
+    for dep in result.dependencies[:20]:  # Limit to 20
+        if dep.is_outdated:
+            outdated_table.add_row(
+                dep.name,
+                dep.version,
+                dep.latest_version or "unknown",
+            )
+    
+    console.print(outdated_table)
+    if result.outdated_count > 20:
+        console.print(f"[dim]... and {result.outdated_count - 20} more outdated dependencies[/dim]")
+
+
+def _display_quality_details(result) -> None:
+    """Display detailed quality results."""
+    from codeatlas.code_quality import QualityAnalysisResult
+    
+    if not isinstance(result, QualityAnalysisResult):
+        return
+    
+    if result.per_file_metrics:
+        console.print()
+        top_complex = sorted(
+            result.per_file_metrics.items(),
+            key=lambda x: x[1].complexity,
+            reverse=True,
+        )[:10]
+        
+        complex_table = Table(
+            title="[bold red]⚠️ Most Complex Files (Top 10)[/bold red]",
+            show_header=True,
+            header_style="bold bright_red",
+            border_style="red",
+        )
+        complex_table.add_column("File", style="cyan", width=30, overflow="ellipsis")
+        complex_table.add_column("Complexity", justify="right", width=12)
+        complex_table.add_column("Maintainability", justify="right", width=15)
+        
+        for file_path, metrics in top_complex:
+            maintainability_color = "green" if metrics.maintainability_index > 70 else "yellow" if metrics.maintainability_index > 50 else "red"
+            complex_table.add_row(
+                Path(file_path).name,
+                str(metrics.complexity),
+                f"[{maintainability_color}]{metrics.maintainability_index:.1f}[/{maintainability_color}]",
+            )
+        
+        console.print(complex_table)
+
+
+def _display_licenses_details(result) -> None:
+    """Display detailed license results."""
+    from codeatlas.license_checker import LicenseCheckResult
+    
+    if not isinstance(result, LicenseCheckResult):
+        return
+    
+    if result.incompatible_licenses:
+        console.print()
+        console.print("[bold red]⚠️ Incompatible Licenses:[/bold red]")
+        for incompatible in result.incompatible_licenses[:10]:
+            console.print(f"  [red]• {incompatible}[/red]")
+        if len(result.incompatible_licenses) > 10:
+            console.print(f"[dim]... and {len(result.incompatible_licenses) - 10} more[/dim]")
+
+
+def _display_duplicates_details(result) -> None:
+    """Display detailed duplication results."""
+    from codeatlas.duplication_detector import DuplicationResult
+    
+    if not isinstance(result, DuplicationResult) or not result.duplicate_blocks:
+        return
+    
+    console.print()
+    for idx, block in enumerate(result.duplicate_blocks[:5], 1):  # Show top 5
+        dup_table = Table(
+            title=f"[bold blue]📋 Duplicate Block #{idx} ({block.size} lines, {block.similarity:.1f}% similar)[/bold blue]",
+            show_header=True,
+            header_style="bold bright_blue",
+            border_style="blue",
+        )
+        dup_table.add_column("File", style="cyan", width=35)
+        dup_table.add_column("Lines", style="white", width=15)
+        
+        for location in block.locations[:3]:  # Show first 3 occurrences
+            file_path, start_line, end_line = location
+            dup_table.add_row(
+                file_path,
+                f"{start_line}-{end_line}",
+            )
+        
+        console.print(dup_table)
+        if len(block.locations) > 3:
+            console.print(f"[dim]... and {len(block.locations) - 3} more occurrences[/dim]")
+        console.print()
+    
+    if len(result.duplicate_blocks) > 5:
+        console.print(f"[dim]... and {len(result.duplicate_blocks) - 5} more duplicate blocks[/dim]")
+
+
+def _display_deadcode_details(result) -> None:
+    """Display detailed dead code results."""
+    from codeatlas.dead_code_detector import DeadCodeResult
+    
+    if not isinstance(result, DeadCodeResult) or result.total_items == 0:
+        return
+    
+    if result.dead_functions:
+        console.print()
+        func_table = Table(
+            title="[bold yellow]⚠️ Dead Functions (Top 20)[/bold yellow]",
+            show_header=True,
+            header_style="bold bright_yellow",
+            border_style="yellow",
+        )
+        func_table.add_column("File", style="cyan", width=35)
+        func_table.add_column("Line", justify="right", width=6)
+        func_table.add_column("Function", style="white", width=30)
+        
+        for item in result.dead_functions[:20]:
+            func_table.add_row(
+                item.file_path,
+                str(item.line_number),
+                item.name,
+            )
+        
+        console.print(func_table)
+        if len(result.dead_functions) > 20:
+            console.print(f"[dim]... and {len(result.dead_functions) - 20} more dead functions[/dim]")
+    
+    if result.dead_classes:
+        console.print()
+        class_table = Table(
+            title="[bold yellow]⚠️ Dead Classes (Top 10)[/bold yellow]",
+            show_header=True,
+            header_style="bold bright_yellow",
+            border_style="yellow",
+        )
+        class_table.add_column("File", style="cyan", width=35)
+        class_table.add_column("Line", justify="right", width=6)
+        class_table.add_column("Class", style="white", width=30)
+        
+        for item in result.dead_classes[:10]:
+            class_table.add_row(
+                item.file_path,
+                str(item.line_number),
+                item.name,
+            )
+        
+        console.print(class_table)
+        if len(result.dead_classes) > 10:
+            console.print(f"[dim]... and {len(result.dead_classes) - 10} more dead classes[/dim]")
 
 
 def _display_scan_table(scan_result: ScanResult) -> None:
