@@ -34,7 +34,20 @@ console = Console()
 @app.command()
 def version():
     """Show version information."""
-    console.print(f"CodeAtlas v{__version__}")
+    from rich.panel import Panel
+    from rich.text import Text
+    
+    version_text = Text()
+    version_text.append("CodeAtlas ", style="bold cyan")
+    version_text.append(f"v{__version__}", style="bold green")
+    
+    console.print()
+    console.print(Panel.fit(
+        version_text,
+        border_style="cyan",
+        title="[bold]Version[/bold]"
+    ))
+    console.print()
 
 
 @app.command()
@@ -89,46 +102,73 @@ def scan(
 
 def _display_scan_table(scan_result: ScanResult) -> None:
     """Display scan results in a table."""
-    console.print("\n[bold cyan]CodeAtlas Scan Results[/bold cyan]\n")
+    from rich.panel import Panel
+    from rich.columns import Columns
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]📊 CodeAtlas Scan Results[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
 
-    # Summary
-    table = Table(title="Summary", show_header=True, header_style="bold magenta")
-    table.add_column("Metric", style="cyan")
-    table.add_column("Value", style="green")
+    # Summary with better formatting
+    summary_table = Table(
+        title="[bold green]📈 Summary Statistics[/bold green]",
+        show_header=True,
+        header_style="bold bright_cyan",
+        border_style="cyan",
+        title_style="bold green"
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=20)
+    summary_table.add_column("Value", style="bright_green", justify="right", width=15)
 
-    table.add_row("Total Files", f"{scan_result.total_files:,}")
-    table.add_row("Total Directories", f"{scan_result.total_dirs:,}")
-    table.add_row("Total Size", _format_size(scan_result.total_size_bytes))
-    table.add_row("Total Lines", f"{scan_result.total_lines:,}")
-    table.add_row("Blank Lines", f"{scan_result.total_blank:,}")
-    table.add_row("Comment Lines", f"{scan_result.total_comments:,}")
-    table.add_row("Code Lines", f"{scan_result.total_code:,}")
+    summary_table.add_row("📁 Total Files", f"[bold]{scan_result.total_files:,}[/bold]")
+    summary_table.add_row("📂 Directories", f"[bold]{scan_result.total_dirs:,}[/bold]")
+    summary_table.add_row("💾 Total Size", f"[bold]{_format_size(scan_result.total_size_bytes)}[/bold]")
+    summary_table.add_row("📝 Total Lines", f"[bold]{scan_result.total_lines:,}[/bold]")
+    summary_table.add_row("⚪ Blank Lines", f"{scan_result.total_blank:,}")
+    summary_table.add_row("💬 Comment Lines", f"[bold yellow]{scan_result.total_comments:,}[/bold yellow]")
+    summary_table.add_row("💻 Code Lines", f"[bold green]{scan_result.total_code:,}[/bold green]")
 
-    console.print(table)
+    console.print(summary_table)
 
-    # Per-language
+    # Per-language with improved design
     if scan_result.per_language:
-        lang_table = Table(title="Per-Language Statistics", show_header=True, header_style="bold magenta")
-        lang_table.add_column("Language", style="cyan")
-        lang_table.add_column("Files", justify="right")
-        lang_table.add_column("Lines", justify="right")
-        lang_table.add_column("Code", justify="right")
-        lang_table.add_column("Comments", justify="right")
-        lang_table.add_column("Size", justify="right")
+        lang_table = Table(
+            title="[bold blue]🌐 Per-Language Statistics[/bold blue]",
+            show_header=True,
+            header_style="bold bright_blue",
+            border_style="blue",
+            title_style="bold blue"
+        )
+        lang_table.add_column("Language", style="bold cyan", width=20)
+        lang_table.add_column("Files", justify="right", style="bright_white", width=10)
+        lang_table.add_column("Lines", justify="right", style="white", width=12)
+        lang_table.add_column("Code", justify="right", style="green", width=12)
+        lang_table.add_column("Comments", justify="right", style="yellow", width=12)
+        lang_table.add_column("Size", justify="right", style="dim white", width=12)
 
         for lang, stats in sorted(
             scan_result.per_language.items(), key=lambda x: x[1]["code"], reverse=True
         ):
+            # Add emoji based on language
+            lang_emoji = {
+                "Python": "🐍", "JavaScript": "🟨", "TypeScript": "🔷", "Java": "☕",
+                "C": "🔵", "C++": "🔷", "C#": "💜", "Go": "🐹", "Rust": "🦀",
+                "Ruby": "💎", "PHP": "🐘", "Swift": "🐦", "Kotlin": "🔶",
+            }.get(lang, "📄")
+            
             lang_table.add_row(
-                lang,
+                f"{lang_emoji} {lang}",
                 f"{stats['files']:,}",
                 f"{stats['lines']:,}",
-                f"{stats['code']:,}",
-                f"{stats['comments']:,}",
+                f"[green]{stats['code']:,}[/green]",
+                f"[yellow]{stats['comments']:,}[/yellow]",
                 _format_size(stats["bytes"]),
             )
 
-        console.print("\n")
+        console.print()
         console.print(lang_table)
 
 
@@ -151,13 +191,22 @@ def tree(
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file"),
 ):
     """Generate project tree."""
+    from rich.panel import Panel
+    
     generator = TreeGenerator()
+    
+    console.print()
+    console.print(Panel.fit(
+        f"[bold cyan]🌳 Project Tree: {path.name}[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
 
     if format == "ascii":
         tree_str = generator.generate_ascii_tree(path, max_depth, include_files, include_size)
         if output:
             output.write_text(tree_str, encoding="utf-8")
-            console.print(f"[green]Tree saved to {output}[/green]")
+            console.print(f"[green]✅ Tree saved to {output}[/green]")
         else:
             console.print(tree_str)
     elif format == "rich":
@@ -169,7 +218,7 @@ def tree(
         )
         if output:
             output.write_text(tree_str, encoding="utf-8")
-            console.print(f"[green]Tree saved to {output}[/green]")
+            console.print(f"[green]✅ Tree saved to {output}[/green]")
         else:
             console.print(tree_str)
 
@@ -214,17 +263,38 @@ def comments(
         filtered = [c for c in filtered if pattern.search(c.content)]
 
     if tui:
+        console.print(f"\n[bold cyan]🚀 Launching TUI with {len(filtered)} comments...[/bold cyan]\n")
         # Pass filtered comments to TUI by updating scan_result
         # Create a modified scan result with only filtered comments
         from codeatlas.scanner import ScanResult as ScanResultType
         from codeatlas.scanner import FileStats
         
-        # Group filtered comments by file
+        # Group filtered comments by file - use relative paths for matching
         filtered_by_file: Dict[str, List[Comment]] = {}
+        base_path_str = str(scan_result.base_path)
+        
         for comment in filtered:
-            if comment.file_path not in filtered_by_file:
-                filtered_by_file[comment.file_path] = []
-            filtered_by_file[comment.file_path].append(comment)
+            # Normalize file path for matching
+            comment_path = comment.file_path
+            # Try to match with relative paths in per_file
+            matched = False
+            for rel_path, file_stats in scan_result.per_file.items():
+                # Check if comment path matches (could be absolute or relative)
+                if comment_path.endswith(rel_path) or rel_path in comment_path:
+                    if rel_path not in filtered_by_file:
+                        filtered_by_file[rel_path] = []
+                    filtered_by_file[rel_path].append(comment)
+                    matched = True
+                    break
+            
+            # If no match found, use the comment's file path directly
+            if not matched:
+                key = comment_path.replace(base_path_str, "").lstrip("/\\")
+                if not key:
+                    key = Path(comment_path).name
+                if key not in filtered_by_file:
+                    filtered_by_file[key] = []
+                filtered_by_file[key].append(comment)
         
         # Create new per_file dict with filtered comments
         filtered_per_file: Dict[str, FileStats] = {}
@@ -244,6 +314,19 @@ def comments(
                     comments=file_comments,
                     is_binary=orig_stats.is_binary,
                 )
+            else:
+                # Create new stats from comments
+                filtered_per_file[file_path] = FileStats(
+                    path=file_path,
+                    size_bytes=0,
+                    total_lines=0,
+                    blank_lines=0,
+                    comment_lines=len(file_comments),
+                    code_lines=0,
+                    language=file_comments[0].language if file_comments else None,
+                    comments=file_comments,
+                    is_binary=False,
+                )
         
         # Create filtered scan result
         filtered_scan_result = ScanResultType(
@@ -261,25 +344,50 @@ def comments(
         )
         launch_tui(filtered_scan_result)
     else:
-        # Display in table
-        table = Table(title=f"Comments ({len(filtered)} found)", show_header=True)
-        table.add_column("File", style="cyan")
-        table.add_column("Line", justify="right")
-        table.add_column("Language", style="green")
-        table.add_column("Content", style="yellow")
-
-        for comment in filtered[:100]:  # Limit display
-            preview = comment.content[:60] + "..." if len(comment.content) > 60 else comment.content
-            table.add_row(
-                comment.file_path,
-                str(comment.line_number),
-                comment.language,
-                preview,
+        # Display in table with improved design
+        from rich.panel import Panel
+        
+        console.print()
+        console.print(Panel.fit(
+            f"[bold cyan]💬 Comments Found: {len(filtered)}[/bold cyan]",
+            border_style="cyan"
+        ))
+        console.print()
+        
+        if not filtered:
+            console.print("[yellow]⚠️  No comments found matching the criteria.[/yellow]")
+            console.print("[dim]Try adjusting your filters or scanning a different directory.[/dim]")
+        else:
+            table = Table(
+                title=f"[bold green]📋 Comment List ({len(filtered)} total)[/bold green]",
+                show_header=True,
+                header_style="bold bright_cyan",
+                border_style="cyan",
+                title_style="bold green",
+                show_lines=True
             )
+            table.add_column("File", style="cyan", width=30, overflow="ellipsis")
+            table.add_column("Line", justify="right", style="bright_white", width=6)
+            table.add_column("Language", style="green", width=12)
+            table.add_column("Content", style="yellow", width=50, overflow="ellipsis")
 
-        console.print(table)
-        if len(filtered) > 100:
-            console.print(f"\n[yellow]Showing first 100 of {len(filtered)} comments[/yellow]")
+            for comment in filtered[:100]:  # Limit display
+                file_display = Path(comment.file_path).name
+                if len(file_display) > 28:
+                    file_display = file_display[:25] + "..."
+                
+                preview = comment.content[:47] + "..." if len(comment.content) > 47 else comment.content
+                table.add_row(
+                    file_display,
+                    str(comment.line_number),
+                    comment.language or "Unknown",
+                    preview,
+                )
+
+            console.print(table)
+            if len(filtered) > 100:
+                console.print(f"\n[yellow]⚠️  Showing first 100 of {len(filtered)} comments[/yellow]")
+                console.print("[dim]Use --tui for full interactive view or --output to export all[/dim]")
 
         if output:
             import json
@@ -330,11 +438,26 @@ def edit(
         console.print("[red]Error: Must specify --replace or --delete[/red]")
         raise typer.Exit(1)
 
+    from rich.panel import Panel
+    from rich.syntax import Syntax
+    
     if diff:
-        console.print("\n[bold]Diff:[/bold]")
-        console.print(diff)
+        console.print()
+        console.print(Panel.fit(
+            "[bold cyan]📝 Diff Preview[/bold cyan]",
+            border_style="cyan"
+        ))
+        console.print()
+        # Use syntax highlighting for diff
+        syntax = Syntax(diff, "diff", theme="monokai", line_numbers=True)
+        console.print(syntax)
+        console.print()
         if not apply and not dry_run:
-            console.print("\n[yellow]Use --apply to apply changes[/yellow]")
+            console.print("[yellow]⚠️  Use --apply to apply changes[/yellow]")
+        elif dry_run:
+            console.print("[yellow]🔍 DRY RUN - No changes applied[/yellow]")
+        else:
+            console.print("[green]✅ Changes applied successfully[/green]")
 
 
 @app.command()
@@ -360,10 +483,23 @@ def cleanup(
             if file_path.suffix in {".py", ".js", ".ts", ".java", ".c", ".cpp", ".h", ".hpp"}:
                 text_files.append(file_path)
 
-    console.print(f"[cyan]Found {len(text_files)} files to process[/cyan]\n")
+    from rich.panel import Panel
+    from rich.progress import track
+    
+    console.print()
+    console.print(Panel.fit(
+        f"[bold cyan]🧹 Code Cleanup[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    console.print(f"[cyan]📁 Found {len(text_files)} files to process[/cyan]\n")
+    
+    if dry_run:
+        console.print("[yellow]🔍 DRY RUN MODE - No files will be modified[/yellow]\n")
 
     modified_count = 0
-    for file_path in text_files:
+    for file_path in track(text_files, description="Cleaning files..."):
         result = cleanup_engine.cleanup_file(
             file_path,
             remove_trailing_spaces=remove_trailing_spaces,
@@ -377,9 +513,16 @@ def cleanup(
 
         if result and result["modified"]:
             modified_count += 1
-            console.print(f"[green]Modified: {file_path}[/green]")
+            if not dry_run:
+                console.print(f"[green]✅ Modified: {file_path}[/green]")
+            else:
+                console.print(f"[yellow]🔍 Would modify: {file_path}[/yellow]")
 
-    console.print(f"\n[bold]Modified {modified_count} files[/bold]")
+    console.print()
+    if dry_run:
+        console.print(f"[bold yellow]🔍 Would modify {modified_count} files (dry run)[/bold yellow]")
+    else:
+        console.print(f"[bold green]✅ Modified {modified_count} files[/bold green]")
 
 
 @app.command()
@@ -407,21 +550,33 @@ def export(
     if git.is_git_repo():
         scan_result.git_info = git.get_git_info()
 
+    from rich.panel import Panel
+    
+    console.print()
+    console.print(Panel.fit(
+        f"[bold cyan]📤 Exporting Scan Results[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
     exporter = Exporter()
 
     if format == "json":
         exporter.export_json(scan_result, output, pretty=True)
+        console.print(f"[green]✅ Exported JSON report to {output}[/green]")
     elif format == "yaml":
         exporter.export_yaml(scan_result, output)
+        console.print(f"[green]✅ Exported YAML report to {output}[/green]")
     elif format == "markdown":
         exporter.export_markdown(scan_result, output)
+        console.print(f"[green]✅ Exported Markdown report to {output}[/green]")
     elif format == "csv":
         exporter.export_csv(scan_result, output)
+        console.print(f"[green]✅ Exported CSV report to {output}[/green]")
     else:
-        console.print(f"[red]Error: Unknown format {format}[/red]")
+        console.print(f"[red]❌ Error: Unknown format {format}[/red]")
+        console.print("[yellow]Supported formats: json, yaml, markdown, csv[/yellow]")
         raise typer.Exit(1)
-
-    console.print(f"[green]Exported to {output}[/green]")
 
 
 @app.command()
