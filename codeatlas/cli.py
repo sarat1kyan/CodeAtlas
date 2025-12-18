@@ -15,11 +15,15 @@ from codeatlas.cleanup import CleanupEngine
 from codeatlas.comment_editor import CommentEditor
 from codeatlas.comment_parser import Comment, CommentParser
 from codeatlas.config import Config
+from codeatlas.code_quality import CodeQualityAnalyzer
+from codeatlas.dependency_checker import DependencyChecker
 from codeatlas.export import Exporter
 from codeatlas.git_integration import GitIntegration
 from codeatlas.language_detector import LanguageDetector
+from codeatlas.license_checker import LicenseChecker
 from codeatlas.plugin_system import PluginManager
 from codeatlas.scanner import CodebaseScanner, ScanResult
+from codeatlas.security_scanner import SecurityScanner
 from codeatlas.tree_generator import TreeGenerator
 from codeatlas.tui import launch_tui
 
@@ -56,6 +60,10 @@ def scan(
     skip_gitignored: bool = typer.Option(False, "--skip-gitignored", help="Skip gitignored files"),
     output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
     format: str = typer.Option("table", "--format", "-f", help="Output format: table, json, yaml"),
+    include_security: bool = typer.Option(False, "--security", help="Include security scan"),
+    include_dependencies: bool = typer.Option(False, "--dependencies", help="Include dependency check"),
+    include_quality: bool = typer.Option(False, "--quality", help="Include code quality analysis"),
+    include_licenses: bool = typer.Option(False, "--licenses", help="Include license check"),
 ):
     """Scan a codebase and display statistics."""
     config = Config(path)
@@ -93,11 +101,104 @@ def scan(
         exporter.export_yaml(scan_result, output or Path("scan_result.yaml"))
         console.print(f"[green]Exported to {output or 'scan_result.yaml'}[/green]")
 
+    # Additional scans if requested
+    security_result = None
+    dependency_result = None
+    quality_result = None
+    license_result = None
+    
+    if include_security:
+        console.print()
+        console.print("[cyan]🔒 Running security scan...[/cyan]")
+        security_scanner = SecurityScanner(path)
+        security_result = security_scanner.scan()
+        
+        if security_result.total_issues > 0:
+            console.print(f"[red]⚠️  Found {security_result.total_issues} security issues[/red]")
+        else:
+            console.print("[green]✅ No security issues found[/green]")
+    
+    if include_dependencies:
+        console.print()
+        console.print("[cyan]📦 Checking dependencies...[/cyan]")
+        dependency_checker = DependencyChecker(path)
+        dependency_result = dependency_checker.check()
+        
+        if dependency_result.outdated_count > 0:
+            console.print(f"[yellow]⚠️  {dependency_result.outdated_count} outdated dependencies[/yellow]")
+        else:
+            console.print("[green]✅ All dependencies up to date[/green]")
+    
+    if include_quality:
+        console.print()
+        console.print("[cyan]📊 Analyzing code quality...[/cyan]")
+        quality_analyzer = CodeQualityAnalyzer(path)
+        quality_result = quality_analyzer.analyze()
+        
+        if quality_result.average_complexity > 10:
+            console.print(f"[yellow]⚠️  High average complexity: {quality_result.average_complexity:.1f}[/yellow]")
+        else:
+            console.print(f"[green]✅ Code quality looks good (complexity: {quality_result.average_complexity:.1f})[/green]")
+    
+    if include_licenses:
+        console.print()
+        console.print("[cyan]📜 Checking licenses...[/cyan]")
+        license_checker = LicenseChecker(path)
+        license_result = license_checker.check()
+        
+        if license_result.incompatible_licenses:
+            console.print(f"[red]⚠️  {len(license_result.incompatible_licenses)} incompatible licenses[/red]")
+        else:
+            console.print("[green]✅ No license conflicts found[/green]")
+    
     # Save to output file if specified
     if output and format == "table":
         exporter = Exporter()
-        exporter.export_json(scan_result, output)
-        console.print(f"[green]Also saved JSON to {output}[/green]")
+        export_data = {
+            "scan": {
+                "base_path": str(scan_result.base_path),
+                "total_files": scan_result.total_files,
+                "total_dirs": scan_result.total_dirs,
+                "total_size_bytes": scan_result.total_size_bytes,
+                "total_lines": scan_result.total_lines,
+                "total_blank": scan_result.total_blank,
+                "total_comments": scan_result.total_comments,
+                "total_code": scan_result.total_code,
+                "per_language": scan_result.per_language,
+            },
+        }
+        
+        if security_result:
+            export_data["security"] = {
+                "total_issues": security_result.total_issues,
+                "issues_by_severity": security_result.issues_by_severity,
+                "dependency_vulnerabilities": security_result.dependency_vulnerabilities,
+            }
+        
+        if dependency_result:
+            export_data["dependencies"] = {
+                "total_dependencies": dependency_result.total_dependencies,
+                "outdated_count": dependency_result.outdated_count,
+                "package_manager": dependency_result.package_manager,
+            }
+        
+        if quality_result:
+            export_data["quality"] = {
+                "average_complexity": quality_result.average_complexity,
+                "average_maintainability": quality_result.average_maintainability,
+                "total_files_analyzed": quality_result.total_files_analyzed,
+            }
+        
+        if license_result:
+            export_data["licenses"] = {
+                "project_license": license_result.project_license.name if license_result.project_license else None,
+                "incompatible_count": len(license_result.incompatible_licenses),
+                "unlicensed_count": len(license_result.unlicensed_dependencies),
+            }
+        
+        import json
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"[green]Also saved comprehensive JSON to {output}[/green]")
 
 
 def _display_scan_table(scan_result: ScanResult) -> None:
@@ -577,6 +678,542 @@ def export(
         console.print(f"[red]❌ Error: Unknown format {format}[/red]")
         console.print("[yellow]Supported formats: json, yaml, markdown, csv[/yellow]")
         raise typer.Exit(1)
+
+
+@app.command()
+def security(
+    path: Path = typer.Argument(..., help="Path to scan for security issues"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
+):
+    """Scan codebase for security vulnerabilities and issues."""
+    from rich.panel import Panel
+    from rich.progress import SpinnerColumn, TextColumn
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]🔒 Security Scan[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    scanner = SecurityScanner(path)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task("[cyan]Scanning for security issues...", total=None)
+        result = scanner.scan()
+    
+    # Display results
+    console.print()
+    
+    # Summary
+    summary_table = Table(
+        title="[bold red]🛡️ Security Summary[/bold red]",
+        show_header=True,
+        header_style="bold bright_red",
+        border_style="red",
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=25)
+    summary_table.add_column("Value", style="bright_white", justify="right", width=15)
+    
+    summary_table.add_row("Total Issues", f"[bold]{result.total_issues}[/bold]")
+    summary_table.add_row("Critical", f"[bold red]{result.issues_by_severity.get('critical', 0)}[/bold red]")
+    summary_table.add_row("High", f"[red]{result.issues_by_severity.get('high', 0)}[/red]")
+    summary_table.add_row("Medium", f"[yellow]{result.issues_by_severity.get('medium', 0)}[/yellow]")
+    summary_table.add_row("Low", f"[dim white]{result.issues_by_severity.get('low', 0)}[/dim white]")
+    summary_table.add_row("Dependency Vulns", f"[bold yellow]{len(result.dependency_vulnerabilities)}[/bold yellow]")
+    
+    console.print(summary_table)
+    
+    # Show issues
+    if result.issues:
+        console.print()
+        issues_table = Table(
+            title="[bold yellow]⚠️ Security Issues[/bold yellow]",
+            show_header=True,
+            header_style="bold bright_yellow",
+            border_style="yellow",
+        )
+        issues_table.add_column("Severity", width=10)
+        issues_table.add_column("File", style="cyan", width=30, overflow="ellipsis")
+        issues_table.add_column("Line", justify="right", width=6)
+        issues_table.add_column("Issue", style="white", width=50, overflow="ellipsis")
+        
+        for issue in result.issues[:50]:  # Limit display
+            severity_color = {
+                "critical": "bold red",
+                "high": "red",
+                "medium": "yellow",
+                "low": "dim white",
+            }.get(issue.severity.lower(), "white")
+            
+            file_display = Path(issue.file_path).name
+            if len(file_display) > 28:
+                file_display = file_display[:25] + "..."
+            
+            issues_table.add_row(
+                f"[{severity_color}]{issue.severity.upper()}[/{severity_color}]",
+                file_display,
+                str(issue.line_number) if issue.line_number else "-",
+                issue.description[:47] + "..." if len(issue.description) > 47 else issue.description,
+            )
+        
+        console.print(issues_table)
+        if len(result.issues) > 50:
+            console.print(f"\n[yellow]⚠️  Showing first 50 of {len(result.issues)} issues[/yellow]")
+    
+    # Dependency vulnerabilities
+    if result.dependency_vulnerabilities:
+        console.print()
+        vuln_table = Table(
+            title="[bold red]🔴 Dependency Vulnerabilities[/bold red]",
+            show_header=True,
+            header_style="bold bright_red",
+            border_style="red",
+        )
+        vuln_table.add_column("Package", style="cyan", width=25)
+        vuln_table.add_column("Version", width=15)
+        vuln_table.add_column("Severity", width=10)
+        vuln_table.add_column("Advisory", style="white", width=40, overflow="ellipsis")
+        
+        for vuln in result.dependency_vulnerabilities[:30]:
+            severity = vuln.get("severity", "unknown").lower()
+            severity_color = {
+                "critical": "bold red",
+                "high": "red",
+                "medium": "yellow",
+                "low": "dim white",
+            }.get(severity, "white")
+            
+            vuln_table.add_row(
+                vuln.get("package", "unknown"),
+                vuln.get("installed_version", "-"),
+                f"[{severity_color}]{severity.upper()}[/{severity_color}]",
+                vuln.get("advisory", "")[:37] + "..." if len(vuln.get("advisory", "")) > 37 else vuln.get("advisory", ""),
+            )
+        
+        console.print(vuln_table)
+        if len(result.dependency_vulnerabilities) > 30:
+            console.print(f"\n[yellow]⚠️  Showing first 30 of {len(result.dependency_vulnerabilities)} vulnerabilities[/yellow]")
+    
+    # Tools used
+    if result.scan_tools:
+        console.print(f"\n[dim]Tools used: {', '.join(result.scan_tools)}[/dim]")
+    
+    # Export if requested
+    if output:
+        import json
+        export_data = {
+            "total_issues": result.total_issues,
+            "issues_by_severity": result.issues_by_severity,
+            "issues": [
+                {
+                    "severity": issue.severity,
+                    "rule_id": issue.rule_id,
+                    "description": issue.description,
+                    "file_path": issue.file_path,
+                    "line_number": issue.line_number,
+                    "cwe_id": issue.cwe_id,
+                }
+                for issue in result.issues
+            ],
+            "dependency_vulnerabilities": result.dependency_vulnerabilities,
+            "scan_tools": result.scan_tools,
+        }
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"\n[green]✅ Exported to {output}[/green]")
+
+
+@app.command()
+def dependencies(
+    path: Path = typer.Argument(..., help="Path to check dependencies"),
+    check_updates: bool = typer.Option(True, "--check-updates/--no-check-updates", help="Check for outdated packages"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
+):
+    """Check project dependencies for updates and issues."""
+    from rich.panel import Panel
+    from rich.progress import SpinnerColumn, TextColumn
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]📦 Dependency Check[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    checker = DependencyChecker(path)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task("[cyan]Checking dependencies...", total=None)
+        result = checker.check()
+    
+    console.print()
+    
+    # Summary
+    summary_table = Table(
+        title="[bold green]📊 Dependency Summary[/bold green]",
+        show_header=True,
+        header_style="bold bright_green",
+        border_style="green",
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=25)
+    summary_table.add_column("Value", style="bright_white", justify="right", width=15)
+    
+    summary_table.add_row("Total Dependencies", f"[bold]{result.total_dependencies}[/bold]")
+    summary_table.add_row("Outdated", f"[yellow]{result.outdated_count}[/yellow]")
+    summary_table.add_row("Up to Date", f"[green]{result.total_dependencies - result.outdated_count}[/green]")
+    summary_table.add_row("Package Manager", result.package_manager or "Unknown")
+    summary_table.add_row("Lock File", "✅ Yes" if result.lock_file_exists else "❌ No")
+    
+    console.print(summary_table)
+    
+    # Outdated packages
+    if result.outdated_count > 0:
+        console.print()
+        outdated_table = Table(
+            title="[bold yellow]⚠️ Outdated Dependencies[/bold yellow]",
+            show_header=True,
+            header_style="bold bright_yellow",
+            border_style="yellow",
+        )
+        outdated_table.add_column("Package", style="cyan", width=30)
+        outdated_table.add_column("Current", width=15)
+        outdated_table.add_column("Latest", style="green", width=15)
+        
+        for dep in result.dependencies:
+            if dep.is_outdated:
+                outdated_table.add_row(
+                    dep.name,
+                    dep.version,
+                    dep.latest_version or "unknown",
+                )
+        
+        console.print(outdated_table)
+    
+    # All dependencies
+    if result.dependencies:
+        console.print()
+        deps_table = Table(
+            title="[bold blue]📋 All Dependencies[/bold blue]",
+            show_header=True,
+            header_style="bold bright_blue",
+            border_style="blue",
+        )
+        deps_table.add_column("Package", style="cyan", width=30)
+        deps_table.add_column("Version", width=15)
+        deps_table.add_column("Status", width=12)
+        deps_table.add_column("License", width=20)
+        
+        for dep in result.dependencies[:50]:
+            status = "[yellow]Outdated[/yellow]" if dep.is_outdated else "[green]Up to date[/green]"
+            deps_table.add_row(
+                dep.name,
+                dep.version,
+                status,
+                dep.license or "Unknown",
+            )
+        
+        console.print(deps_table)
+        if len(result.dependencies) > 50:
+            console.print(f"\n[yellow]⚠️  Showing first 50 of {len(result.dependencies)} dependencies[/yellow]")
+    
+    # Export if requested
+    if output:
+        import json
+        export_data = {
+            "total_dependencies": result.total_dependencies,
+            "outdated_count": result.outdated_count,
+            "package_manager": result.package_manager,
+            "lock_file_exists": result.lock_file_exists,
+            "dependencies": [
+                {
+                    "name": dep.name,
+                    "version": dep.version,
+                    "latest_version": dep.latest_version,
+                    "is_outdated": dep.is_outdated,
+                    "license": dep.license,
+                }
+                for dep in result.dependencies
+            ],
+        }
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"\n[green]✅ Exported to {output}[/green]")
+
+
+@app.command()
+def quality(
+    path: Path = typer.Argument(..., help="Path to analyze code quality"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
+):
+    """Analyze code quality, complexity, and maintainability."""
+    from rich.panel import Panel
+    from rich.progress import SpinnerColumn, TextColumn
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]📊 Code Quality Analysis[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    analyzer = CodeQualityAnalyzer(path)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task("[cyan]Analyzing code quality...", total=None)
+        result = analyzer.analyze()
+    
+    console.print()
+    
+    # Summary
+    summary_table = Table(
+        title="[bold green]📈 Quality Summary[/bold green]",
+        show_header=True,
+        header_style="bold bright_green",
+        border_style="green",
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=25)
+    summary_table.add_column("Value", style="bright_white", justify="right", width=15)
+    
+    summary_table.add_row("Files Analyzed", f"[bold]{result.total_files_analyzed}[/bold]")
+    summary_table.add_row("Avg Complexity", f"[bold]{result.average_complexity:.1f}[/bold]")
+    summary_table.add_row("Avg Maintainability", f"[bold]{result.average_maintainability:.1f}[/bold]")
+    
+    # Complexity breakdown
+    if result.files_by_complexity:
+        console.print()
+        complexity_table = Table(
+            title="[bold blue]🔍 Complexity Distribution[/bold blue]",
+            show_header=True,
+            header_style="bold bright_blue",
+            border_style="blue",
+        )
+        complexity_table.add_column("Complexity Level", style="bold cyan", width=20)
+        complexity_table.add_column("File Count", justify="right", width=15)
+        complexity_table.add_column("Files", style="dim white", width=50, overflow="ellipsis")
+        
+        for level in ["low", "medium", "high", "very_high"]:
+            files = result.files_by_complexity.get(level, [])
+            if files:
+                color = {
+                    "low": "green",
+                    "medium": "yellow",
+                    "high": "red",
+                    "very_high": "bold red",
+                }.get(level, "white")
+                
+                file_list = ", ".join([Path(f).name for f in files[:5]])
+                if len(files) > 5:
+                    file_list += f" ... (+{len(files) - 5} more)"
+                
+                complexity_table.add_row(
+                    f"[{color}]{level.upper()}[/{color}]",
+                    str(len(files)),
+                    file_list,
+                )
+        
+        console.print(complexity_table)
+    
+    # Top complex files
+    if result.per_file_metrics:
+        console.print()
+        top_complex = sorted(
+            result.per_file_metrics.items(),
+            key=lambda x: x[1].complexity,
+            reverse=True,
+        )[:10]
+        
+        complex_table = Table(
+            title="[bold red]⚠️ Most Complex Files[/bold red]",
+            show_header=True,
+            header_style="bold bright_red",
+            border_style="red",
+        )
+        complex_table.add_column("File", style="cyan", width=30, overflow="ellipsis")
+        complex_table.add_column("Complexity", justify="right", width=12)
+        complex_table.add_column("Maintainability", justify="right", width=15)
+        complex_table.add_column("Lines", justify="right", width=10)
+        
+        for file_path, metrics in top_complex:
+            maintainability_color = "green" if metrics.maintainability_index > 70 else "yellow" if metrics.maintainability_index > 50 else "red"
+            complex_table.add_row(
+                Path(file_path).name,
+                str(metrics.complexity),
+                f"[{maintainability_color}]{metrics.maintainability_index:.1f}[/{maintainability_color}]",
+                str(metrics.lines_of_code),
+            )
+        
+        console.print(complex_table)
+    
+    # Export if requested
+    if output:
+        import json
+        export_data = {
+            "total_files_analyzed": result.total_files_analyzed,
+            "average_complexity": result.average_complexity,
+            "average_maintainability": result.average_maintainability,
+            "files_by_complexity": result.files_by_complexity,
+            "per_file_metrics": {
+                file_path: {
+                    "complexity": metrics.complexity,
+                    "maintainability_index": metrics.maintainability_index,
+                    "lines_of_code": metrics.lines_of_code,
+                    "cyclomatic_complexity": metrics.cyclomatic_complexity,
+                    "cognitive_complexity": metrics.cognitive_complexity,
+                    "technical_debt": metrics.technical_debt,
+                }
+                for file_path, metrics in result.per_file_metrics.items()
+            },
+        }
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"\n[green]✅ Exported to {output}[/green]")
+
+
+@app.command()
+def licenses(
+    path: Path = typer.Argument(..., help="Path to check licenses"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
+):
+    """Check licenses for project and dependencies."""
+    from rich.panel import Panel
+    from rich.progress import SpinnerColumn, TextColumn
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]📜 License Check[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    checker = LicenseChecker(path)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task("[cyan]Checking licenses...", total=None)
+        result = checker.check()
+    
+    console.print()
+    
+    # Project license
+    if result.project_license:
+        console.print("[bold green]📄 Project License:[/bold green]")
+        license_table = Table(show_header=False, box=None, padding=(0, 2))
+        license_table.add_column(style="cyan", width=20)
+        license_table.add_column(style="white")
+        
+        license_table.add_row("Name:", result.project_license.name)
+        if result.project_license.spdx_id:
+            license_table.add_row("SPDX ID:", result.project_license.spdx_id)
+        license_table.add_row("OSI Approved:", "✅ Yes" if result.project_license.is_osi_approved else "❌ No")
+        license_table.add_row("FSF Approved:", "✅ Yes" if result.project_license.is_fsf_approved else "❌ No")
+        license_table.add_row("Risk Level:", result.project_license.risk_level.upper())
+        
+        console.print(license_table)
+        console.print()
+    
+    # Summary
+    summary_table = Table(
+        title="[bold blue]📊 License Summary[/bold blue]",
+        show_header=True,
+        header_style="bold bright_blue",
+        border_style="blue",
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=25)
+    summary_table.add_column("Value", style="bright_white", justify="right", width=15)
+    
+    summary_table.add_row("Dependencies Checked", f"[bold]{result.total_dependencies_checked}[/bold]")
+    summary_table.add_row("Incompatible", f"[red]{len(result.incompatible_licenses)}[/red]")
+    summary_table.add_row("Unlicensed", f"[yellow]{len(result.unlicensed_dependencies)}[/yellow]")
+    
+    console.print(summary_table)
+    
+    # Incompatible licenses
+    if result.incompatible_licenses:
+        console.print()
+        console.print("[bold red]⚠️ Incompatible Licenses:[/bold red]")
+        for incompatible in result.incompatible_licenses:
+            console.print(f"  [red]• {incompatible}[/red]")
+    
+    # Unlicensed dependencies
+    if result.unlicensed_dependencies:
+        console.print()
+        console.print("[bold yellow]⚠️ Unlicensed Dependencies:[/bold yellow]")
+        for unlicensed in result.unlicensed_dependencies:
+            console.print(f"  [yellow]• {unlicensed}[/yellow]")
+    
+    # Dependency licenses
+    if result.dependency_licenses:
+        console.print()
+        license_table = Table(
+            title="[bold green]📋 Dependency Licenses[/bold green]",
+            show_header=True,
+            header_style="bold bright_green",
+            border_style="green",
+        )
+        license_table.add_column("Package", style="cyan", width=30)
+        license_table.add_column("License", width=20)
+        license_table.add_column("OSI Approved", width=12)
+        license_table.add_column("Risk", width=10)
+        
+        for dep_name, license_info in list(result.dependency_licenses.items())[:50]:
+            risk_color = {
+                "low": "green",
+                "medium": "yellow",
+                "high": "red",
+                "unknown": "dim white",
+            }.get(license_info.risk_level, "white")
+            
+            license_table.add_row(
+                dep_name,
+                license_info.name,
+                "✅" if license_info.is_osi_approved else "❌",
+                f"[{risk_color}]{license_info.risk_level.upper()}[/{risk_color}]",
+            )
+        
+        console.print(license_table)
+        if len(result.dependency_licenses) > 50:
+            console.print(f"\n[yellow]⚠️  Showing first 50 of {len(result.dependency_licenses)} dependencies[/yellow]")
+    
+    # Export if requested
+    if output:
+        import json
+        export_data = {
+            "project_license": {
+                "name": result.project_license.name,
+                "spdx_id": result.project_license.spdx_id,
+                "is_osi_approved": result.project_license.is_osi_approved,
+                "is_fsf_approved": result.project_license.is_fsf_approved,
+                "risk_level": result.project_license.risk_level,
+            } if result.project_license else None,
+            "total_dependencies_checked": result.total_dependencies_checked,
+            "incompatible_licenses": result.incompatible_licenses,
+            "unlicensed_dependencies": result.unlicensed_dependencies,
+            "dependency_licenses": {
+                dep_name: {
+                    "name": info.name,
+                    "spdx_id": info.spdx_id,
+                    "is_osi_approved": info.is_osi_approved,
+                    "is_fsf_approved": info.is_fsf_approved,
+                    "risk_level": info.risk_level,
+                }
+                for dep_name, info in result.dependency_licenses.items()
+            },
+        }
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"\n[green]✅ Exported to {output}[/green]")
 
 
 @app.command()

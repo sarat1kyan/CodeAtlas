@@ -1,177 +1,493 @@
-# CodeAtlas
+# 🗺️ CodeAtlas
+
+<div align="center">
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.11](https://img.shields.io/badge/python-3.11-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
+[![Type checking: mypy](https://img.shields.io/badge/type%20checking-mypy-blue.svg)](https://github.com/python/mypy)
 
-**CodeAtlas** is a production-ready CLI + TUI tool for scanning, analyzing, cleaning, and interactively editing comments in codebases. Built with Python 3.11+ and designed to scale to repositories with 100k+ files.
+**The Ultimate Codebase Analysis & Management Tool**
 
-## Features
+*Comprehensive security scanning, dependency analysis, code quality metrics, and comment management in one powerful CLI tool.*
 
-### Core Features
+[Features](#-features) • [Installation](#-installation) • [Quick Start](#-quick-start) • [Documentation](#-documentation) • [Examples](#-examples)
 
-- **🔍 Project Language Detection**: Detects languages by file extension, shebang, and content analysis. Reports per-language percentages based on logical lines and bytes.
-- **📊 Codebase Statistics**: Comprehensive statistics for whole project and per-language (lines, comments, blanks, code, files, directories, size).
-- **💬 Comment Review & Editing**: Interactive CLI and TUI for reviewing and editing comments with context-aware editing, batch operations, and safety features.
-- **🌳 Project Tree Generation**: Pretty-printed tree with ASCII, Rich (colors + icons), and Markdown export options.
-- **🎨 Beautiful CLI/TUI**: Rich terminal output with optional Textual-based TUI for keyboard-driven navigation.
-- **⚡ Performance**: Parallel scanning with caching, scales to 100k+ files.
+</div>
 
-### Additional Features
+---
 
-- **🔧 Git Integration**: Auto-detect git repos, skip gitignored files, show git status summary.
-- **📤 Exportable Reports**: JSON, YAML, Markdown, CSV exports with stable schemas.
-- **🧹 Cleanup Mode**: Remove trailing spaces, normalize indentation, remove duplicate blanks, detect commented-out code.
-- **🔌 Plugin System**: Extensible plugin architecture with sandboxed execution.
-- **🔄 Dry-run Support**: All destructive operations support `--dry-run` with unified diff preview.
-- **💾 Backup & Undo**: Automatic backups with undo support for all file modifications.
+## 🌟 What is CodeAtlas?
 
-## Installation
+**CodeAtlas** is a production-ready, feature-rich CLI tool that provides comprehensive codebase analysis, security scanning, dependency management, code quality metrics, and interactive comment editing. Built with Python 3.10+ and designed to scale to repositories with 100k+ files.
 
-### From Source
+### Why CodeAtlas?
+
+- 🔒 **Security First**: Built-in vulnerability scanning with Bandit, Safety, npm audit, and more
+- 📦 **Dependency Intelligence**: Multi-language dependency analysis with update detection
+- 📊 **Quality Metrics**: Advanced complexity analysis and maintainability scoring
+- 📜 **License Compliance**: Automatic license detection and compatibility checking
+- 💬 **Comment Management**: Interactive TUI for reviewing and editing comments
+- ⚡ **Blazing Fast**: Parallel processing with intelligent caching
+- 🎨 **Beautiful Output**: Rich terminal UI with color-coded tables and progress indicators
+- 🔌 **Extensible**: Plugin system for custom analysis
+
+---
+
+## ✨ Features
+
+### 🔒 Security & Vulnerability Scanning
+
+- **Bandit Integration**: Scans Python code for security issues
+- **Dependency Vulnerability Checks**: Safety, pip-audit, npm audit support
+- **Generic Security Patterns**: Detects hardcoded secrets, SQL injection risks, command injection
+- **Severity Classification**: Categorizes issues by criticality (critical, high, medium, low)
+- **Detailed Reporting**: File locations, line numbers, and code snippets
+
+### 📦 Dependency Management
+
+- **Multi-Language Support**: Python (pip, poetry, pipenv), Node.js (npm), Go, Rust
+- **Update Detection**: Identifies outdated packages automatically
+- **License Information**: Shows dependency licenses and compatibility
+- **Lock File Detection**: Validates presence of lock files for reproducible builds
+- **Package Manager Detection**: Auto-detects package managers in use
+
+### 📊 Code Quality Analysis
+
+- **Cyclomatic Complexity**: Measures code complexity and branching
+- **Cognitive Complexity**: Analyzes code understandability
+- **Maintainability Index**: Calculates code maintainability score (0-100)
+- **Halstead Volume**: Estimates code complexity metrics
+- **Technical Debt Assessment**: Categorizes files by complexity level
+- **Top Issues Identification**: Highlights most complex files
+
+### 📜 License Compliance
+
+- **Project License Detection**: Finds licenses from multiple sources (LICENSE, package.json, pyproject.toml, setup.py)
+- **Dependency License Analysis**: Checks all dependency licenses
+- **Compatibility Checking**: Detects incompatible license combinations
+- **OSI/FSF Approval**: Validates licenses against OSI/FSF standards
+- **Risk Assessment**: Categorizes licenses by risk level
+
+### 💬 Comment Management
+
+- **Interactive TUI**: Beautiful Textual-based interface for comment review
+- **Context-Aware Editing**: See code context when editing comments
+- **Batch Operations**: Edit multiple comments efficiently
+- **Safety Features**: Automatic backups with undo support
+- **Filtering**: Filter by file, language, or text pattern
+
+### 🌳 Project Analysis
+
+- **Language Detection**: Detects 50+ languages by extension, shebang, and content
+- **Comprehensive Statistics**: Per-file and per-language metrics
+- **Project Tree Generation**: ASCII, Rich (colors + icons), and Markdown formats
+- **Git Integration**: Auto-detects repos, respects .gitignore, shows git status
+- **Export Formats**: JSON, YAML, Markdown, CSV with stable schemas
+
+### 🧹 Code Cleanup
+
+- **Trailing Spaces**: Remove trailing whitespace
+- **Indentation Normalization**: Standardize indentation
+- **Duplicate Blank Lines**: Remove excessive blank lines
+- **Commented Code Detection**: Find and optionally remove commented-out code
+- **Dry-Run Mode**: Preview changes before applying
+
+### 🔌 Extensibility
+
+- **Plugin System**: Extensible architecture with sandboxed execution
+- **Custom Hooks**: on_scan, on_export, on_edit hooks
+- **Easy Integration**: Simple plugin API
+
+---
+
+## 🚀 Installation
+
+### Quick Install
 
 ```bash
+# Clone the repository
 git clone https://github.com/sarat1kyan/CodeAtlas.git
 cd CodeAtlas
+
+# Install in development mode
 pip install -e .
 ```
 
 ### Requirements
 
-- Python 3.10+
+- **Python 3.10+** (3.11+ recommended)
 - Dependencies are automatically installed via `pip install -e .`
 
-## Quick Start
+### Optional External Tools
 
-### Scan a Codebase
-
-```bash
-codeatlas scan /path/to/repo
-```
-
-### View Comments
+For enhanced functionality, you can optionally install:
 
 ```bash
-codeatlas comments /path/to/repo
+# Python security tools
+pip install bandit safety pip-audit pip-licenses
+
+# Node.js tools (if working with Node.js projects)
+npm install -g license-checker
 ```
 
-### Interactive TUI
+> **Note**: CodeAtlas works without these tools, but they enable additional features like security scanning and license checking.
+
+---
+
+## ⚡ Quick Start
+
+### 1. Scan Your Codebase
 
 ```bash
-codeatlas comments /path/to/repo --tui
+# Basic scan
+codeatlas scan /path/to/your/project
+
+# Comprehensive scan with all features
+codeatlas scan . --security --dependencies --quality --licenses
 ```
 
-### Generate Project Tree
+### 2. Security Audit
 
 ```bash
-codeatlas tree /path/to/repo --format rich
+# Check for security vulnerabilities
+codeatlas security /path/to/project
+
+# Export security report
+codeatlas security . --output security-report.json
 ```
 
-### Export Report
+### 3. Check Dependencies
 
 ```bash
-codeatlas export /path/to/repo --format json --output report.json
+# Check for outdated dependencies
+codeatlas dependencies /path/to/project
+
+# Check with update detection
+codeatlas dependencies . --check-updates
 ```
 
-### Clean Up Code
+### 4. Analyze Code Quality
 
 ```bash
-codeatlas cleanup /path/to/repo --remove-trailing-spaces --dry-run
+# Analyze code complexity and maintainability
+codeatlas quality /path/to/project
+
+# Export quality metrics
+codeatlas quality . --output quality-report.json
 ```
 
-## Command Reference
-
-### `scan`
-
-Scan a codebase and display statistics.
+### 5. Review Comments
 
 ```bash
-codeatlas scan <path> [--skip-gitignored] [--output OUTPUT] [--format FORMAT]
+# List all comments
+codeatlas comments /path/to/project
+
+# Interactive TUI
+codeatlas comments /path/to/project --tui
+
+# Filter comments
+codeatlas comments . --language Python --text "TODO"
 ```
 
-Options:
+---
+
+## 📖 Command Reference
+
+### `scan` - Comprehensive Codebase Scanning
+
+Scan your codebase with optional security, dependency, quality, and license checks.
+
+```bash
+codeatlas scan <path> [OPTIONS]
+```
+
+**Options:**
 - `--skip-gitignored`: Skip files listed in `.gitignore`
 - `--output, -o`: Output file for JSON report
 - `--format, -f`: Output format (`table`, `json`, `yaml`)
+- `--security`: Include security vulnerability scan
+- `--dependencies`: Include dependency analysis
+- `--quality`: Include code quality analysis
+- `--licenses`: Include license compliance check
 
-### `tree`
-
-Generate project tree.
-
+**Examples:**
 ```bash
-codeatlas tree <path> [--format FORMAT] [--max-depth DEPTH] [--files/--no-files] [--size] [--output OUTPUT]
+# Basic scan
+codeatlas scan .
+
+# Full analysis
+codeatlas scan . --security --dependencies --quality --licenses --output report.json
 ```
 
-Options:
+---
+
+### `security` - Security Vulnerability Scanning
+
+Scan for security vulnerabilities and dependency issues.
+
+```bash
+codeatlas security <path> [--output OUTPUT]
+```
+
+**Features:**
+- Python code security (Bandit)
+- Dependency vulnerabilities (Safety, pip-audit)
+- Node.js vulnerabilities (npm audit)
+- Generic security pattern detection
+
+**Example:**
+```bash
+codeatlas security . --output security-report.json
+```
+
+---
+
+### `dependencies` - Dependency Analysis
+
+Check dependencies for updates, licenses, and issues.
+
+```bash
+codeatlas dependencies <path> [--check-updates] [--output OUTPUT]
+```
+
+**Features:**
+- Multi-language support (Python, Node.js, Go, Rust)
+- Outdated package detection
+- License information
+- Lock file validation
+
+**Example:**
+```bash
+codeatlas dependencies . --check-updates
+```
+
+---
+
+### `quality` - Code Quality Analysis
+
+Analyze code complexity, maintainability, and quality metrics.
+
+```bash
+codeatlas quality <path> [--output OUTPUT]
+```
+
+**Metrics:**
+- Cyclomatic complexity
+- Cognitive complexity
+- Maintainability index
+- Technical debt assessment
+
+**Example:**
+```bash
+codeatlas quality . --output quality-report.json
+```
+
+---
+
+### `licenses` - License Compliance
+
+Check project and dependency licenses for compliance.
+
+```bash
+codeatlas licenses <path> [--output OUTPUT]
+```
+
+**Features:**
+- Project license detection
+- Dependency license analysis
+- Compatibility checking
+- Risk assessment
+
+**Example:**
+```bash
+codeatlas licenses . --output licenses.json
+```
+
+---
+
+### `comments` - Comment Management
+
+List, review, and manage comments in your codebase.
+
+```bash
+codeatlas comments <path> [OPTIONS]
+```
+
+**Options:**
+- `--file PATTERN`: Filter by file path pattern
+- `--language LANG`: Filter by language
+- `--text REGEX`: Filter by text regex
+- `--tui`: Launch interactive TUI
+- `--output, -o`: Export comments to JSON
+
+**Examples:**
+```bash
+# List all comments
+codeatlas comments .
+
+# Interactive TUI
+codeatlas comments . --tui
+
+# Filter Python TODOs
+codeatlas comments . --language Python --text "TODO"
+```
+
+---
+
+### `edit` - Edit Comments
+
+Edit or delete comments in files.
+
+```bash
+codeatlas edit <file:line> [OPTIONS]
+```
+
+**Options:**
+- `--replace TEXT`: New comment text
+- `--delete`: Delete comment
+- `--dry-run`: Show diff without applying
+- `--apply`: Apply changes (required for non-dry-run)
+
+**Example:**
+```bash
+codeatlas edit src/main.py:42 --replace "Updated comment" --apply
+```
+
+---
+
+### `tree` - Project Tree Generation
+
+Generate beautiful project tree visualizations.
+
+```bash
+codeatlas tree <path> [OPTIONS]
+```
+
+**Options:**
 - `--format, -f`: Format (`ascii`, `rich`, `markdown`)
 - `--max-depth, -d`: Maximum depth
 - `--files/--no-files`: Include/exclude files
 - `--size`: Include file sizes
 - `--output, -o`: Output file
 
-### `comments`
-
-List and review comments.
-
+**Examples:**
 ```bash
-codeatlas comments <path> [--file PATTERN] [--language LANG] [--text REGEX] [--tui] [--output OUTPUT]
+# Rich tree with colors
+codeatlas tree . --format rich
+
+# Markdown export
+codeatlas tree . --format markdown --output tree.md
 ```
 
-Options:
-- `--file`: Filter by file path pattern
-- `--language`: Filter by language
-- `--text`: Filter by text regex
-- `--tui`: Launch interactive TUI
-- `--output, -o`: Export comments to JSON
+---
 
-### `edit`
+### `cleanup` - Code Cleanup
 
-Edit comments in files.
+Clean up code files with various options.
 
 ```bash
-codeatlas edit <file:line> [--replace TEXT] [--delete] [--dry-run] [--apply]
+codeatlas cleanup <path> [OPTIONS]
 ```
 
-Options:
-- `--replace`: New comment text
-- `--delete`: Delete comment
-- `--dry-run`: Show diff without applying
-- `--apply`: Apply changes (required for non-dry-run)
+**Options:**
+- `--remove-trailing-spaces`: Remove trailing whitespace
+- `--normalize-indentation`: Normalize indentation
+- `--tab-width WIDTH`: Tab width for indentation (default: 4)
+- `--remove-duplicate-blanks`: Remove duplicate blank lines
+- `--max-blanks N`: Max consecutive blank lines (default: 2)
+- `--remove-commented-code`: Remove commented-out code
+- `--dry-run`: Preview changes without applying
 
-### `cleanup`
+**Example:**
+```bash
+codeatlas cleanup . --remove-trailing-spaces --dry-run
+```
 
-Clean up code files.
+---
+
+### `export` - Export Reports
+
+Export scan results to various formats.
 
 ```bash
-codeatlas cleanup <path> [--remove-trailing-spaces] [--normalize-indentation] [--tab-width WIDTH] [--remove-duplicate-blanks] [--max-blanks N] [--remove-commented-code] [--dry-run]
+codeatlas export <path> <output> [OPTIONS]
 ```
 
-### `export`
+**Options:**
+- `--format, -f`: Format (`json`, `yaml`, `markdown`, `csv`)
+- `--skip-gitignored`: Skip gitignored files
 
-Export scan results.
-
+**Example:**
 ```bash
-codeatlas export <path> [--format FORMAT] <output> [--skip-gitignored]
+codeatlas export . report.json --format json
 ```
 
-Formats: `json`, `yaml`, `markdown`, `csv`
+---
 
-### `plugins`
+### `plugins` - Plugin Management
 
-Manage plugins.
+Manage CodeAtlas plugins.
 
 ```bash
 codeatlas plugins [--list] [--load PLUGIN]
 ```
 
-## Configuration
+**Example:**
+```bash
+codeatlas plugins --list
+```
+
+---
+
+## 🎯 Use Cases
+
+### CI/CD Integration
+
+```bash
+# In your CI pipeline
+codeatlas scan . --security --dependencies --quality --licenses --output report.json
+
+# Check for critical security issues
+codeatlas security . --output security.json
+if grep -q '"severity": "critical"' security.json; then
+    echo "Critical security issues found!"
+    exit 1
+fi
+```
+
+### Pre-Commit Checks
+
+```bash
+# Check code quality before committing
+codeatlas quality . --output quality.json
+codeatlas security . --output security.json
+```
+
+### Dependency Maintenance
+
+```bash
+# Weekly dependency check
+codeatlas dependencies . --check-updates --output deps.json
+```
+
+### License Compliance
+
+```bash
+# Before releasing
+codeatlas licenses . --output licenses.json
+```
+
+---
+
+## ⚙️ Configuration
 
 CodeAtlas supports both global and local configuration:
 
 - **Global**: `~/.config/CodeAtlas/config.yml`
 - **Local**: `.codeatlas/config.yml` (project-specific)
 
-Example configuration:
+### Example Configuration
 
 ```yaml
 theme: default
@@ -195,7 +511,9 @@ cleanup:
   remove_commented_code: false
 ```
 
-## Export Schema
+---
+
+## 📊 Export Schema
 
 ### JSON Export Format
 
@@ -205,7 +523,6 @@ cleanup:
   "total_files": 1234,
   "total_dirs": 56,
   "total_size_bytes": 12345678,
-  "human_size": "11.8 MB",
   "total_lines": 50000,
   "total_blank": 5000,
   "total_comments": 3000,
@@ -220,45 +537,41 @@ cleanup:
       "bytes": 500000
     }
   },
-  "per_file": {
-    "src/main.py": {
-      "size_bytes": 1024,
-      "lines": 50,
-      "blank": 5,
-      "comment": 10,
-      "code": 35,
-      "language": "Python"
+  "security": {
+    "total_issues": 5,
+    "issues_by_severity": {
+      "critical": 0,
+      "high": 2,
+      "medium": 3
     }
   },
-  "git": {
-    "is_git_repo": true,
-    "branch": "main",
-    "commit": "abc123",
-    "status": {
-      "modified": [],
-      "untracked": [],
-      "added": [],
-      "deleted": []
-    }
+  "dependencies": {
+    "total_dependencies": 45,
+    "outdated_count": 3
+  },
+  "quality": {
+    "average_complexity": 8.5,
+    "average_maintainability": 72.3
+  },
+  "licenses": {
+    "project_license": "MIT",
+    "incompatible_count": 0
   }
 }
 ```
 
-## Plugin System
+---
 
-Plugins can be created in the `codeatlas_plugins/` directory. Each plugin must export:
+## 🔌 Plugin System
 
-- `plugin_info() -> dict`: Returns `{"name": "", "version": "", "author": ""}`
-- `on_scan(scan_result: dict) -> dict | None`: Hook called after scanning
-- `on_export(scan_result: dict, export_type: str) -> None`: Hook called before export
-- `on_edit(pre_edit_state: dict, planned_changes: dict) -> dict | None`: Hook called before editing
+Create custom plugins in the `codeatlas_plugins/` directory.
 
-Example plugin:
+### Plugin Structure
 
 ```python
 def plugin_info():
     return {
-        "name": "example_plugin",
+        "name": "my_plugin",
         "version": "1.0.0",
         "author": "Your Name"
     }
@@ -266,11 +579,21 @@ def plugin_info():
 def on_scan(scan_result):
     # Process scan result
     return None
+
+def on_export(scan_result, export_type):
+    # Process before export
+    pass
+
+def on_edit(pre_edit_state, planned_changes):
+    # Validate or modify edits
+    return planned_changes
 ```
 
-## Development
+---
 
-### Setup
+## 🛠️ Development
+
+### Setup Development Environment
 
 ```bash
 git clone https://github.com/sarat1kyan/CodeAtlas.git
@@ -290,32 +613,74 @@ pytest
 black codeatlas tests
 isort codeatlas tests
 mypy codeatlas
+ruff check codeatlas
 ```
 
-## Contributing
+---
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+## 🤝 Contributing
 
-## License
+Contributions are welcome! Please see [CONTRIBUTING.md](CONTRIBUTING.md) for guidelines.
+
+### Areas for Contribution
+
+- 🐛 Bug fixes
+- ✨ New features
+- 📚 Documentation improvements
+- 🧪 Test coverage
+- 🔌 Plugin development
+- 🌍 Language support
+
+---
+
+## 📝 License
 
 MIT License - see [LICENSE](LICENSE) for details.
 
-## Author
+---
+
+## 👤 Author
 
 **sarat1kyan**
 
 - GitHub: [@sarat1kyan](https://github.com/sarat1kyan)
 - Repository: [CodeAtlas](https://github.com/sarat1kyan/CodeAtlas)
+- Issues: [Report a bug](https://github.com/sarat1kyan/CodeAtlas/issues)
 
-## Acknowledgments
+---
 
-Built with:
+## 🙏 Acknowledgments
+
+Built with amazing open-source tools:
+
 - [Rich](https://github.com/Textualize/rich) - Beautiful terminal output
 - [Typer](https://github.com/tiangolo/typer) - Modern CLI framework
 - [Textual](https://github.com/Textualize/textual) - TUI framework
 - [PyYAML](https://github.com/yaml/pyyaml) - YAML parsing
+- [Bandit](https://github.com/PyCQA/bandit) - Security linter
+- [Safety](https://github.com/pyupio/safety) - Dependency vulnerability checker
 
 ---
 
-**CodeAtlas v0.1.0** - Production-ready codebase analysis and comment management.
+## 📈 Roadmap
 
+- [ ] Code duplication detection
+- [ ] Dead code analysis
+- [ ] Performance profiling
+- [ ] Documentation coverage analysis
+- [ ] Test coverage integration
+- [ ] Architecture analysis
+- [ ] Dependency graph visualization
+- [ ] More language support
+
+---
+
+<div align="center">
+
+**⭐ Star this repo if you find it useful! ⭐**
+
+**CodeAtlas v0.1.0** - Production-ready codebase analysis and management.
+
+Made with ❤️ by the CodeAtlas team
+
+</div>
