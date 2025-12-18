@@ -466,7 +466,7 @@ class SecurityScanner:
             "vendor", "bower_components", ".next", ".nuxt"
         }
         
-        skip_extensions = {".pyc", ".pyo", ".class", ".jar", ".war", ".ear", ".so", ".dll", ".dylib"}
+        skip_extensions = (".pyc", ".pyo", ".class", ".jar", ".war", ".ear", ".so", ".dll", ".dylib")
 
         for root, dirs, files in os.walk(self.project_path):
             # Skip common directories
