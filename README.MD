@@ -879,6 +879,62 @@ MIT License - see [LICENSE](LICENSE) for details.
 
 ## 🔧 Troubleshooting
 
+### Dependency Resolution Errors
+
+If you encounter `ResolutionImpossible` or dependency conflict errors during installation:
+
+**The installer automatically tries multiple strategies:**
+1. Standard installation
+2. Installation without build isolation
+3. Two-step installation (dependencies first, then package)
+4. Installation with PEP 517
+
+**Manual troubleshooting steps:**
+
+1. **Update pip and build tools:**
+   ```bash
+   python -m pip install --upgrade pip wheel setuptools
+   ```
+
+2. **Try installing without dev dependencies:**
+   ```bash
+   # When prompted, answer 'n' to "Install development dependencies?"
+   # Or manually:
+   pip install -e .
+   ```
+
+3. **Install dependencies individually:**
+   ```bash
+   pip install rich typer textual pyyaml chardet
+   pip install -e . --no-deps
+   ```
+
+4. **Use a different Python version:**
+   - CodeAtlas requires Python 3.10+
+   - Python 3.11 or 3.12 are recommended
+   - Python 3.13 may have compatibility issues with some dependencies
+
+5. **Check for conflicting packages:**
+   ```bash
+   pip list  # Check installed packages
+   pip check  # Check for conflicts
+   ```
+
+6. **Clean installation:**
+   ```bash
+   # Remove existing venv and start fresh
+   rm -rf venv
+   python -m venv venv
+   source venv/bin/activate  # or venv\Scripts\activate on Windows
+   pip install --upgrade pip wheel setuptools
+   pip install -e .
+   ```
+
+**If all else fails:**
+- Check the full error message shown by the installer
+- Report the issue with Python version and error details
+- Try installing in a fresh virtual environment
+
 ### npm Permission Errors
 
 If you encounter `EACCES: permission denied` when installing npm packages globally:

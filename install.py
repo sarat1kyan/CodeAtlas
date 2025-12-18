@@ -262,57 +262,188 @@ def install_dependencies(venv_path: Path, project_path: Path, use_dev: bool = Fa
         else:
             print(f"⚠️  Warning: Failed to upgrade pip: {e}")
     
-    # Install the package
-    install_cmd = [str(pip_path), "install", "-e", "."]
-    if use_dev:
-        install_cmd.append(".[dev]")
+    # Install the package - try multiple strategies
+    install_strategies = [
+        # Strategy 1: Standard editable install
+        {
+            "name": "Standard installation",
+            "cmd": [str(pip_path), "install", "-e", "."] + ([".[dev]"] if use_dev else []),
+        },
+        # Strategy 2: With --no-build-isolation (sometimes helps with conflicts)
+        {
+            "name": "Installation without build isolation",
+            "cmd": [str(pip_path), "install", "-e", ".", "--no-build-isolation"] + ([".[dev]"] if use_dev else []),
+        },
+        # Strategy 3: Install dependencies first, then package
+        {
+            "name": "Two-step installation",
+            "cmd": None,  # Special handling below
+        },
+        # Strategy 4: Use --use-pep517
+        {
+            "name": "Installation with PEP 517",
+            "cmd": [str(pip_path), "install", "-e", ".", "--use-pep517"] + ([".[dev]"] if use_dev else []),
+        },
+    ]
     
-    try:
-        if RICH_AVAILABLE:
-            with Progress(
-                SpinnerColumn(),
-                TextColumn("[progress.description]{task.description}"),
-                BarColumn(),
-                TaskProgressColumn(),
-                console=console,
-            ) as progress:
-                task = progress.add_task("[green]Installing CodeAtlas...", total=None)
-                result = subprocess.run(
-                    install_cmd,
-                    cwd=project_path,
-                    capture_output=True,
-                    text=True,
-                )
-                progress.update(task, completed=100)
-        else:
-            print("Installing CodeAtlas...")
-            result = subprocess.run(
-                install_cmd,
-                cwd=project_path,
-                capture_output=True,
-                text=True,
-            )
-        
-        if result.returncode == 0:
+    for strategy_idx, strategy in enumerate(install_strategies, 1):
+        try:
             if RICH_AVAILABLE:
-                console.print("[green]✅ Dependencies installed successfully[/green]")
+                console.print(f"[cyan]Trying {strategy['name']}...[/cyan]")
             else:
-                print("✅ Dependencies installed successfully")
-            return True
-        else:
-            if RICH_AVAILABLE:
-                console.print("[red]❌ Failed to install dependencies[/red]")
-                console.print(f"[dim]{result.stderr}[/dim]")
+                print(f"Trying {strategy['name']}...")
+            
+            # Special handling for two-step installation
+            if strategy["cmd"] is None:
+                # Get dependencies from pyproject.toml and install them first
+                try:
+                    import tomllib
+                except ImportError:
+                    try:
+                        import tomli as tomllib
+                    except ImportError:
+                        tomllib = None
+                
+                if tomllib:
+                    pyproject_path = project_path / "pyproject.toml"
+                    if pyproject_path.exists():
+                        with open(pyproject_path, "rb") as f:
+                            data = tomllib.load(f)
+                            deps = data.get("project", {}).get("dependencies", [])
+                            if use_dev:
+                                dev_deps = data.get("project", {}).get("optional-dependencies", {}).get("dev", [])
+                                deps.extend(dev_deps)
+                            
+                            # Install dependencies one by one (more lenient)
+                            failed_deps = []
+                            for dep in deps:
+                                # Parse dependency string (e.g., "rich>=13.7.0" or "tomli>=2.0.0; python_version < '3.11'")
+                                dep_spec = dep.split(";")[0].strip()
+                                if dep_spec:
+                                    dep_install_cmd = [str(pip_path), "install", dep_spec]
+                                    dep_result = subprocess.run(
+                                        dep_install_cmd,
+                                        cwd=project_path,
+                                        capture_output=True,
+                                        text=True,
+                                    )
+                                    if dep_result.returncode != 0:
+                                        failed_deps.append(dep_spec)
+                                        if RICH_AVAILABLE:
+                                            console.print(f"[dim yellow]⚠️  Could not install {dep_spec.split('>=')[0].split('==')[0].split('<')[0].split('>')[0].strip()}, continuing...[/dim yellow]")
+                                        else:
+                                            print(f"⚠️  Could not install {dep_spec}, continuing...")
+                            
+                            # Now install the package (even if some deps failed)
+                            install_cmd = [str(pip_path), "install", "-e", "."] + ([".[dev]"] if use_dev else [])
+                            result = subprocess.run(
+                                install_cmd,
+                                cwd=project_path,
+                                capture_output=True,
+                                text=True,
+                            )
+                    else:
+                        # No pyproject.toml, use standard install
+                        install_cmd = [str(pip_path), "install", "-e", "."] + ([".[dev]"] if use_dev else [])
+                        result = subprocess.run(
+                            install_cmd,
+                            cwd=project_path,
+                            capture_output=True,
+                            text=True,
+                        )
+                else:
+                    # Can't parse, use standard install
+                    install_cmd = [str(pip_path), "install", "-e", "."] + ([".[dev]"] if use_dev else [])
+                    result = subprocess.run(
+                        install_cmd,
+                        cwd=project_path,
+                        capture_output=True,
+                        text=True,
+                    )
             else:
-                print("❌ Failed to install dependencies")
-                print(result.stderr)
-            return False
-    except Exception as e:
-        if RICH_AVAILABLE:
-            console.print(f"[red]❌ Error installing dependencies: {e}[/red]")
-        else:
-            print(f"❌ Error installing dependencies: {e}")
-        return False
+                # Standard command execution
+                if RICH_AVAILABLE:
+                    with Progress(
+                        SpinnerColumn(),
+                        TextColumn("[progress.description]{task.description}"),
+                        BarColumn(),
+                        TaskProgressColumn(),
+                        console=console,
+                    ) as progress:
+                        task = progress.add_task(f"[green]{strategy['name']}...", total=None)
+                        result = subprocess.run(
+                            strategy["cmd"],
+                            cwd=project_path,
+                            capture_output=True,
+                            text=True,
+                        )
+                        progress.update(task, completed=100)
+                else:
+                    result = subprocess.run(
+                        strategy["cmd"],
+                        cwd=project_path,
+                        capture_output=True,
+                        text=True,
+                    )
+            
+            if result.returncode == 0:
+                if RICH_AVAILABLE:
+                    console.print(f"[green]✅ Dependencies installed successfully using {strategy['name']}[/green]")
+                else:
+                    print(f"✅ Dependencies installed successfully using {strategy['name']}")
+                return True
+            else:
+                # Show error but continue to next strategy
+                if strategy_idx < len(install_strategies):
+                    if RICH_AVAILABLE:
+                        console.print(f"[yellow]⚠️  {strategy['name']} failed, trying next method...[/yellow]")
+                        if result.stderr:
+                            console.print(f"[dim]{result.stderr[:500]}...[/dim]")
+                    else:
+                        print(f"⚠️  {strategy['name']} failed, trying next method...")
+                        if result.stderr:
+                            print(result.stderr[:500])
+                else:
+                    # Last strategy failed, show full error
+                    if RICH_AVAILABLE:
+                        console.print("[red]❌ All installation strategies failed[/red]")
+                        console.print()
+                        console.print(Panel(
+                            result.stderr or result.stdout or "Unknown error",
+                            title="[bold red]Error Details[/bold red]",
+                            border_style="red",
+                        ))
+                        console.print()
+                        console.print("[yellow]💡 Troubleshooting tips:[/yellow]")
+                        console.print("  • Try updating pip: pip install --upgrade pip")
+                        console.print("  • Check Python version compatibility (requires Python 3.10+)")
+                        console.print("  • Try installing without dev dependencies")
+                        console.print("  • Check for conflicting packages in your environment")
+                    else:
+                        print("❌ All installation strategies failed")
+                        print("\nError details:")
+                        print(result.stderr or result.stdout or "Unknown error")
+                        print("\nTroubleshooting tips:")
+                        print("  • Try updating pip: pip install --upgrade pip")
+                        print("  • Check Python version compatibility (requires Python 3.10+)")
+                        print("  • Try installing without dev dependencies")
+                        print("  • Check for conflicting packages in your environment")
+                    return False
+        except Exception as e:
+            if strategy_idx < len(install_strategies):
+                if RICH_AVAILABLE:
+                    console.print(f"[yellow]⚠️  {strategy['name']} encountered an error: {e}[/yellow]")
+                else:
+                    print(f"⚠️  {strategy['name']} encountered an error: {e}")
+                continue
+            else:
+                if RICH_AVAILABLE:
+                    console.print(f"[red]❌ Error installing dependencies: {e}[/red]")
+                else:
+                    print(f"❌ Error installing dependencies: {e}")
+                return False
+    
+    return False
 
 
 def install_optional_tools(venv_path: Path) -> bool:
