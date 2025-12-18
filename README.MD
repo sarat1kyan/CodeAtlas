@@ -124,21 +124,128 @@
 
 ## 🚀 Installation
 
-### Quick Install
+### 🎨 Interactive Installation (Recommended)
+
+We provide beautiful, interactive installation scripts that handle everything automatically:
+
+**Python Script (Cross-platform, Recommended):**
+```bash
+# Clone the repository
+git clone https://github.com/sarat1kyan/CodeAtlas.git
+cd CodeAtlas
+
+# Run interactive installer
+python install.py
+```
+
+**Bash Script (Linux/Mac):**
+```bash
+# Make executable and run
+chmod +x install.sh
+./install.sh
+```
+
+**Windows Batch Script:**
+```cmd
+# Run in Command Prompt
+install.bat
+```
+
+**What the installer does:**
+- ✅ Checks Python version (3.10+)
+- ✅ Detects available package manager (pip, pip3, poetry, pipenv)
+- ✅ Creates virtual environment (with option to customize location)
+- ✅ Installs all dependencies automatically
+- ✅ Optionally installs security tools (bandit, safety, pip-audit)
+- ✅ Verifies installation
+- ✅ Shows beautiful usage instructions with next steps
+- ✅ Beautiful Rich UI with progress bars and colored output
+- ✅ Graceful fallback if Rich is not available
+
+### Uninstall
+
+To remove CodeAtlas and its virtual environment:
+
+**Python Script:**
+```bash
+python install.py --uninstall
+python install.py --uninstall --remove-config  # Also remove config files
+```
+
+**Bash Script:**
+```bash
+./install.sh --uninstall
+./install.sh --uninstall --remove-config  # Also remove config files
+```
+
+**Windows Batch:**
+```cmd
+install.bat --uninstall
+install.bat --uninstall --remove-config  # Also remove config files
+```
+
+The uninstaller will:
+- ✅ Find virtual environments automatically
+- ✅ Let you select which venv to remove (if multiple)
+- ✅ Ask for confirmation before removal
+- ✅ Optionally remove configuration files
+- ✅ Show beautiful confirmation messages
+
+### Manual Installation
+
+If you prefer manual installation:
 
 ```bash
 # Clone the repository
 git clone https://github.com/sarat1kyan/CodeAtlas.git
 cd CodeAtlas
 
+# Create virtual environment (recommended)
+python -m venv venv
+
+# Activate virtual environment
+# On Windows:
+venv\Scripts\activate
+# On Linux/Mac:
+source venv/bin/activate
+
 # Install in development mode
 pip install -e .
+
+# Or with development dependencies
+pip install -e ".[dev]"
+```
+
+### Manual Uninstall
+
+To manually uninstall:
+
+```bash
+# Remove virtual environment
+rm -rf venv  # Linux/Mac
+rmdir /s /q venv  # Windows
+
+# Optionally remove config files
+rm -rf .codeatlas  # Local config
+rm -rf ~/.config/CodeAtlas  # Global config (Linux/Mac)
 ```
 
 ### Requirements
 
 - **Python 3.10+** (3.11+ recommended)
-- Dependencies are automatically installed via `pip install -e .`
+- **pip** or **pip3** (automatically detected)
+- Dependencies are automatically installed by the installer
+
+### Installation Options
+
+The interactive installer supports:
+
+- **Virtual Environment**: Automatically creates and manages venv
+- **Package Manager Detection**: Auto-detects pip, pip3, poetry, pipenv
+- **Development Mode**: Option to install dev dependencies
+- **Optional Tools**: Option to install security scanning tools
+- **Custom Location**: Choose where to create virtual environment
+- **Verification**: Automatically verifies installation success
 
 ### Optional External Tools
 
