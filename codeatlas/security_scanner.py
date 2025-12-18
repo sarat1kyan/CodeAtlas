@@ -7,7 +7,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from rich.console import Console
 
@@ -81,6 +81,22 @@ class SecurityScanner:
         # Generic security checks
         generic_issues = self._scan_generic_security()
         result.issues.extend(generic_issues)
+        
+        # Entropy-based secret detection
+        entropy_issues = self._scan_entropy_secrets()
+        result.issues.extend(entropy_issues)
+        
+        # File-based secret detection
+        file_secrets = self._scan_file_secrets()
+        result.issues.extend(file_secrets)
+        
+        # Entropy-based secret detection
+        entropy_issues = self._scan_entropy_secrets()
+        result.issues.extend(entropy_issues)
+        
+        # File-based secret detection
+        file_secrets = self._scan_file_secrets()
+        result.issues.extend(file_secrets)
 
         # Calculate totals
         result.total_issues = len(result.issues) + len(result.dependency_vulnerabilities)
@@ -331,44 +347,339 @@ class SecurityScanner:
 
         return vulnerabilities
 
+    def _detect_secret_type(self, line: str, pattern_match: re.Match) -> Tuple[str, str]:
+        """Detect the type of secret and determine severity."""
+        line_lower = line.lower()
+        matched_text = pattern_match.group(0).lower()
+        
+        # High severity - actual credentials
+        if any(keyword in matched_text for keyword in ["password", "pwd", "passwd", "pass"]):
+            if len(pattern_match.group(0)) > 10:  # Likely not a placeholder
+                return "high", "Hardcoded password detected"
+        
+        # AWS credentials
+        if any(keyword in matched_text for keyword in ["aws_access_key", "aws_secret", "aws_key"]):
+            return "critical", "AWS credentials detected"
+        
+        # API keys and tokens
+        if any(keyword in matched_text for keyword in ["api_key", "apikey", "api-key", "token", "bearer"]):
+            # Check if it looks like a real key (long alphanumeric)
+            value_match = re.search(r"['\"]([^'\"]+)['\"]", line)
+            if value_match and len(value_match.group(1)) > 20:
+                return "high", "API key or token detected"
+        
+        # Private keys
+        if any(keyword in matched_text for keyword in ["private_key", "privatekey", "rsa_key", "ssh_key"]):
+            return "critical", "Private key detected"
+        
+        # Database credentials
+        if any(keyword in matched_text for keyword in ["db_password", "database_password", "db_pass", "db_pwd"]):
+            return "high", "Database password detected"
+        
+        # OAuth and social media keys
+        if any(keyword in matched_text for keyword in ["oauth", "client_secret", "consumer_secret", "facebook", "twitter", "google"]):
+            return "high", "OAuth or social media credentials detected"
+        
+        # JWT secrets
+        if "jwt" in matched_text and "secret" in matched_text:
+            return "high", "JWT secret detected"
+        
+        # Encryption keys
+        if any(keyword in matched_text for keyword in ["encryption_key", "enc_key", "cipher_key"]):
+            return "high", "Encryption key detected"
+        
+        # Generic secrets
+        if "secret" in matched_text:
+            value_match = re.search(r"['\"]([^'\"]+)['\"]", line)
+            if value_match and len(value_match.group(1)) > 10:
+                return "medium", "Hardcoded secret detected"
+        
+        return "medium", "Potential hardcoded credential"
+
     def _scan_generic_security(self) -> List[SecurityIssue]:
-        """Perform generic security checks."""
+        """Perform comprehensive generic security checks."""
         issues: List[SecurityIssue] = []
 
-        # Check for common security issues
+        # Comprehensive security patterns with severity classification
         security_patterns = [
-            # Hardcoded secrets
-            (r"(?i)(password|secret|api[_-]?key|private[_-]?key)\s*=\s*['\"][^'\"]+['\"]", "hardcoded_secret"),
-            # SQL injection patterns
-            (r"(?i)(execute|query)\s*\(\s*['\"].*%.*['\"]", "sql_injection_risk"),
-            # Command injection
-            (r"(?i)(os\.system|subprocess\.call|exec|eval)\s*\([^)]*\+", "command_injection_risk"),
+            # Passwords and credentials (high priority)
+            (r"(?i)(password|pwd|passwd|pass)\s*[=:]\s*['\"]([^'\"]{4,})['\"]", "hardcoded_password"),
+            (r"(?i)(password|pwd|passwd)\s*=\s*['\"][^'\"]+['\"]", "hardcoded_password"),
+            
+            # API Keys and Tokens
+            (r"(?i)(api[_-]?key|apikey|api_key)\s*[=:]\s*['\"]([^'\"]{10,})['\"]", "api_key_exposed"),
+            (r"(?i)(token|bearer|access_token|refresh_token)\s*[=:]\s*['\"]([^'\"]{10,})['\"]", "token_exposed"),
+            
+            # AWS Credentials
+            (r"(?i)(aws[_-]?access[_-]?key[_-]?id|aws[_-]?secret[_-]?access[_-]?key)\s*[=:]\s*['\"]([^'\"]+)['\"]", "aws_credentials"),
+            (r"(?i)AKIA[0-9A-Z]{16}", "aws_access_key_id"),  # AWS access key pattern
+            
+            # Private Keys
+            (r"(?i)(private[_-]?key|privatekey|rsa[_-]?key|ssh[_-]?key)\s*[=:]\s*['\"]", "private_key_exposed"),
+            (r"-----BEGIN\s+(RSA\s+)?PRIVATE\s+KEY-----", "private_key_file"),
+            
+            # Database Credentials
+            (r"(?i)(db[_-]?password|database[_-]?password|db[_-]?pass|db[_-]?pwd|db[_-]?user)\s*[=:]\s*['\"]([^'\"]+)['\"]", "database_credentials"),
+            (r"(?i)(mongodb|mysql|postgres|postgresql)://[^:]+:([^@]+)@", "database_connection_string"),
+            
+            # OAuth and Social Media
+            (r"(?i)(oauth[_-]?token|client[_-]?secret|consumer[_-]?secret)\s*[=:]\s*['\"]([^'\"]+)['\"]", "oauth_credentials"),
+            (r"(?i)(facebook[_-]?app[_-]?secret|twitter[_-]?consumer[_-]?secret|google[_-]?client[_-]?secret)\s*[=:]\s*['\"]([^'\"]+)['\"]", "social_media_credentials"),
+            
+            # JWT Secrets
+            (r"(?i)(jwt[_-]?secret|jwt[_-]?key)\s*[=:]\s*['\"]([^'\"]+)['\"]", "jwt_secret"),
+            
+            # Encryption Keys
+            (r"(?i)(encryption[_-]?key|enc[_-]?key|cipher[_-]?key|secret[_-]?key)\s*[=:]\s*['\"]([^'\"]{10,})['\"]", "encryption_key"),
+            
+            # Generic Secrets
+            (r"(?i)(secret|secret_key|secretkey)\s*[=:]\s*['\"]([^'\"]{8,})['\"]", "hardcoded_secret"),
+            
+            # SQL Injection patterns
+            (r"(?i)(execute|query|exec)\s*\(\s*['\"].*%[sd].*['\"]", "sql_injection_risk"),
+            (r"(?i)(execute|query)\s*\(\s*['\"].*\+.*['\"]", "sql_injection_risk"),
+            
+            # Command Injection
+            (r"(?i)(os\.system|subprocess\.(call|run|Popen)|exec|eval|shell_exec)\s*\([^)]*\+", "command_injection_risk"),
+            (r"(?i)(exec|eval)\s*\([^)]*\$", "command_injection_risk"),
+            
+            # XSS vulnerabilities
+            (r"(?i)(innerHTML|outerHTML)\s*=\s*[^;]+(\+|\$)", "xss_risk"),
+            (r"(?i)document\.write\s*\([^)]*\+", "xss_risk"),
+            
+            # Insecure random
+            (r"(?i)(Math\.random|random\.randint)\s*\([^)]*\)", "insecure_random"),
+            
+            # Weak cryptography
+            (r"(?i)(md5|sha1)\s*\(", "weak_cryptography"),
+            
+            # Debug code left in production
+            (r"(?i)(console\.log|print|debugger|var_dump)\s*\([^)]*password|secret|key", "debug_code_with_secrets"),
+            
+            # Environment files with secrets
+            (r"(?i)\.env.*['\"](password|secret|key|token)", "env_file_secret"),
         ]
+
+        skip_dirs = {
+            ".git", "__pycache__", "node_modules", ".venv", "venv", "target", 
+            "build", "dist", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+            "vendor", "bower_components", ".next", ".nuxt"
+        }
+        
+        skip_extensions = {".pyc", ".pyo", ".class", ".jar", ".war", ".ear", ".so", ".dll", ".dylib"}
 
         for root, dirs, files in os.walk(self.project_path):
             # Skip common directories
-            dirs[:] = [d for d in dirs if d not in {".git", "__pycache__", "node_modules", ".venv", "venv"}]
+            dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith(".")]
 
             for file in files:
-                if file.endswith((".py", ".js", ".ts", ".java", ".rb", ".php")):
+                # Skip binary files and common non-code files
+                if file.endswith(skip_extensions):
+                    continue
+                
+                # Check code files and config files
+                if file.endswith((".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".rb", ".php", ".go", ".rs", ".cpp", ".c", ".h", ".hpp", ".cs", ".swift", ".kt", ".scala", ".clj", ".sh", ".bash", ".zsh", ".fish", ".ps1", ".env", ".config", ".conf", ".ini", ".yaml", ".yml", ".toml", ".json")):
                     file_path = Path(root) / file
+                    
+                    # Skip if file is too large (>1MB)
+                    try:
+                        if file_path.stat().st_size > 1024 * 1024:
+                            continue
+                    except Exception:
+                        continue
+                    
                     try:
                         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
-                            for line_num, line in enumerate(f, 1):
+                            content = f.read()
+                            lines = content.split("\n")
+                            
+                            for line_num, line in enumerate(lines, 1):
+                                # Skip comments that are clearly documentation
+                                stripped = line.strip()
+                                if stripped.startswith("//") or stripped.startswith("#") or stripped.startswith("*"):
+                                    # Check if it's a real secret in a comment
+                                    if any(keyword in line.lower() for keyword in ["password", "secret", "key", "token"]) and len(line) > 20:
+                                        # Might be a real secret, check it
+                                        pass
+                                    else:
+                                        continue
+                                
                                 for pattern, rule_id in security_patterns:
-                                    if re.search(pattern, line):
+                                    match = re.search(pattern, line)
+                                    if match:
+                                        # Determine severity and description
+                                        if rule_id in ["hardcoded_password", "aws_credentials", "private_key_exposed", "private_key_file"]:
+                                            severity = "critical"
+                                            description = f"Critical: {rule_id.replace('_', ' ').title()}"
+                                        elif rule_id in ["api_key_exposed", "token_exposed", "database_credentials", "oauth_credentials", "jwt_secret", "encryption_key"]:
+                                            severity = "high"
+                                            description = f"High: {rule_id.replace('_', ' ').title()}"
+                                        elif rule_id in ["sql_injection_risk", "command_injection_risk", "xss_risk"]:
+                                            severity = "high"
+                                            description = f"High: {rule_id.replace('_', ' ').title()}"
+                                        else:
+                                            severity, desc = self._detect_secret_type(line, match)
+                                            description = f"{severity.title()}: {desc}"
+                                        
+                                        # Extract code snippet (mask sensitive parts)
+                                        code_snippet = line.strip()[:150]
+                                        # Mask potential secrets in display
+                                        if match.groups():
+                                            for group in match.groups():
+                                                if group and len(group) > 8:
+                                                    code_snippet = code_snippet.replace(group, "***MASKED***")
+                                        
                                         issues.append(
                                             SecurityIssue(
-                                                severity="medium",
+                                                severity=severity,
                                                 rule_id=rule_id,
-                                                description=f"Potential security issue: {rule_id}",
+                                                description=description,
                                                 file_path=str(file_path.relative_to(self.project_path)),
                                                 line_number=line_num,
-                                                code_snippet=line.strip()[:100],
+                                                code_snippet=code_snippet,
+                                                confidence="high" if severity in ["critical", "high"] else "medium",
                                             )
                                         )
-                    except Exception:
+                                        break  # Only report first match per line
+                    except (UnicodeDecodeError, PermissionError, Exception):
                         pass
 
+        return issues
+
+    def _calculate_entropy(self, text: str) -> float:
+        """Calculate Shannon entropy of a string."""
+        if not text:
+            return 0.0
+        
+        import math
+        text = text.strip()
+        if not text:
+            return 0.0
+        
+        # Count character frequencies
+        char_counts = {}
+        for char in text:
+            char_counts[char] = char_counts.get(char, 0) + 1
+        
+        # Calculate entropy
+        length = len(text)
+        entropy = 0.0
+        for count in char_counts.values():
+            probability = count / length
+            if probability > 0:
+                entropy -= probability * math.log2(probability)
+        
+        return entropy
+
+    def _scan_entropy_secrets(self) -> List[SecurityIssue]:
+        """Scan for high-entropy strings that might be secrets."""
+        issues: List[SecurityIssue] = []
+        
+        # High entropy threshold (random-looking strings)
+        entropy_threshold = 4.0
+        
+        skip_dirs = {
+            ".git", "__pycache__", "node_modules", ".venv", "venv", "target",
+            "build", "dist", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+            "vendor", "bower_components", ".next", ".nuxt", "bin", "obj"
+        }
+        
+        for root, dirs, files in os.walk(self.project_path):
+            dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith(".")]
+            
+            for file in files:
+                if file.endswith((".py", ".js", ".ts", ".jsx", ".tsx", ".java", ".rb", ".php", ".go", ".rs", ".env", ".config", ".conf")):
+                    file_path = Path(root) / file
+                    
+                    try:
+                        if file_path.stat().st_size > 1024 * 1024:  # Skip > 1MB
+                            continue
+                        
+                        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+                            for line_num, line in enumerate(f, 1):
+                                # Look for string literals
+                                string_pattern = r"['\"]([^'\"]{20,})['\"]"
+                                matches = re.finditer(string_pattern, line)
+                                
+                                for match in matches:
+                                    value = match.group(1)
+                                    entropy = self._calculate_entropy(value)
+                                    
+                                    # High entropy suggests it might be a secret
+                                    if entropy >= entropy_threshold and len(value) >= 20:
+                                        # Check if it's not a URL or other common high-entropy pattern
+                                        if not re.match(r"^https?://", value) and not re.match(r"^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$", value):
+                                            issues.append(
+                                                SecurityIssue(
+                                                    severity="medium",
+                                                    rule_id="high_entropy_string",
+                                                    description=f"High entropy string detected (entropy: {entropy:.2f}) - possible secret",
+                                                    file_path=str(file_path.relative_to(self.project_path)),
+                                                    line_number=line_num,
+                                                    code_snippet=line.strip()[:100].replace(value, "***MASKED***"),
+                                                    confidence="medium",
+                                                )
+                                            )
+                    except Exception:
+                        pass
+        
+        return issues
+
+    def _scan_file_secrets(self) -> List[SecurityIssue]:
+        """Scan for secret files and sensitive file patterns."""
+        issues: List[SecurityIssue] = []
+        
+        # Patterns for secret files
+        secret_file_patterns = [
+            (r"\.env$", "Environment file with potential secrets"),
+            (r"\.env\.(local|dev|prod|staging)", "Environment-specific config file"),
+            (r"secrets?\.(json|yaml|yml|toml)", "Secrets configuration file"),
+            (r"\.(pem|key|p12|pfx|jks)$", "Private key or certificate file"),
+            (r"id_rsa|id_dsa|id_ecdsa|id_ed25519", "SSH private key file"),
+            (r"\.(sqlite|db)$", "Database file in repository"),
+            (r"credentials?\.(json|yaml|yml)", "Credentials file"),
+        ]
+        
+        skip_dirs = {
+            ".git", "__pycache__", "node_modules", ".venv", "venv", "target",
+            "build", "dist", ".pytest_cache", ".mypy_cache", ".ruff_cache",
+        }
+        
+        for root, dirs, files in os.walk(self.project_path):
+            dirs[:] = [d for d in dirs if d not in skip_dirs and not d.startswith(".")]
+            
+            for file in files:
+                for pattern, description in secret_file_patterns:
+                    if re.search(pattern, file, re.IGNORECASE):
+                        file_path = Path(root) / file
+                        rel_path = file_path.relative_to(self.project_path)
+                        
+                        # Check if file is in .gitignore (should be)
+                        is_gitignored = False
+                        try:
+                            from codeatlas.git_integration import GitIntegration
+                            git = GitIntegration(self.project_path)
+                            is_gitignored = git.is_gitignored(file_path)
+                        except Exception:
+                            pass
+                        
+                        severity = "high" if not is_gitignored else "medium"
+                        reason = description
+                        if not is_gitignored:
+                            reason += " - NOT in .gitignore!"
+                        
+                        issues.append(
+                            SecurityIssue(
+                                severity=severity,
+                                rule_id="secret_file_detected",
+                                description=reason,
+                                file_path=str(rel_path),
+                                line_number=None,
+                                code_snippet=None,
+                                confidence="high",
+                            )
+                        )
+                        break
+        
         return issues
 

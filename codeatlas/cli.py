@@ -16,7 +16,9 @@ from codeatlas.comment_editor import CommentEditor
 from codeatlas.comment_parser import Comment, CommentParser
 from codeatlas.config import Config
 from codeatlas.code_quality import CodeQualityAnalyzer
+from codeatlas.dead_code_detector import DeadCodeDetector
 from codeatlas.dependency_checker import DependencyChecker
+from codeatlas.duplication_detector import DuplicationDetector
 from codeatlas.export import Exporter
 from codeatlas.git_integration import GitIntegration
 from codeatlas.language_detector import LanguageDetector
@@ -33,6 +35,174 @@ app = typer.Typer(
     add_completion=False,
 )
 console = Console()
+
+
+@app.command()
+def summary(
+    path: Path = typer.Argument(..., help="Path to analyze"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
+):
+    """Generate comprehensive codebase summary with all metrics."""
+    from rich.panel import Panel
+    from rich.columns import Columns
+    from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]📊 CodeAtlas Comprehensive Summary[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    # Run all scans
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        console=console,
+    ) as progress:
+        # Basic scan
+        task1 = progress.add_task("[cyan]Scanning codebase...", total=100)
+        config = Config(path)
+        scanner = CodebaseScanner(config)
+        scan_result = scanner.scan(path, progress=progress)
+        progress.update(task1, completed=100)
+        
+        # Security
+        task2 = progress.add_task("[red]Security scan...", total=100)
+        security_scanner = SecurityScanner(path)
+        security_result = security_scanner.scan()
+        progress.update(task2, completed=100)
+        
+        # Dependencies
+        task3 = progress.add_task("[yellow]Checking dependencies...", total=100)
+        dependency_checker = DependencyChecker(path)
+        dependency_result = dependency_checker.check()
+        progress.update(task3, completed=100)
+        
+        # Quality
+        task4 = progress.add_task("[green]Analyzing quality...", total=100)
+        quality_analyzer = CodeQualityAnalyzer(path)
+        quality_result = quality_analyzer.analyze()
+        progress.update(task4, completed=100)
+        
+        # Duplicates
+        task5 = progress.add_task("[blue]Detecting duplicates...", total=100)
+        duplication_detector = DuplicationDetector(path)
+        duplicates_result = duplication_detector.detect()
+        progress.update(task5, completed=100)
+        
+        # Dead code
+        task6 = progress.add_task("[magenta]Detecting dead code...", total=100)
+        deadcode_detector = DeadCodeDetector(path)
+        deadcode_result = deadcode_detector.detect()
+        progress.update(task6, completed=100)
+    
+    console.print()
+    
+    # Create comprehensive summary
+    from rich.panel import Panel
+    
+    # Overall health score
+    health_score = 100
+    health_issues = []
+    
+    if security_result.total_issues > 0:
+        health_score -= min(30, security_result.total_issues)
+        health_issues.append(f"Security: {security_result.total_issues} issues")
+    
+    if duplicates_result.duplication_percentage > 10:
+        health_score -= 10
+        health_issues.append(f"Duplication: {duplicates_result.duplication_percentage:.1f}%")
+    
+    if deadcode_result.total_items > 20:
+        health_score -= 5
+        health_issues.append(f"Dead code: {deadcode_result.total_items} items")
+    
+    if quality_result.average_complexity > 15:
+        health_score -= 10
+        health_issues.append(f"Complexity: {quality_result.average_complexity:.1f}")
+    
+    health_score = max(0, health_score)
+    health_color = "green" if health_score >= 80 else "yellow" if health_score >= 60 else "red"
+    
+    # Summary panel
+    summary_text = f"""
+[bold]📁 Project:[/bold] {path.name}
+[bold]📊 Health Score:[/bold] [{health_color}]{health_score}/100[/{health_color}]
+
+[bold cyan]📈 Codebase Metrics:[/bold cyan]
+  • Files: {scan_result.total_files:,}
+  • Lines: {scan_result.total_lines:,}
+  • Languages: {len(scan_result.per_language)}
+
+[bold red]🔒 Security:[/bold red]
+  • Issues: {security_result.total_issues}
+  • Critical: {security_result.issues_by_severity.get('critical', 0)}
+  • High: {security_result.issues_by_severity.get('high', 0)}
+
+[bold yellow]📦 Dependencies:[/bold yellow]
+  • Total: {dependency_result.total_dependencies}
+  • Outdated: {dependency_result.outdated_count}
+
+[bold green]📊 Quality:[/bold green]
+  • Avg Complexity: {quality_result.average_complexity:.1f}
+  • Maintainability: {quality_result.average_maintainability:.1f}
+
+[bold blue]🔄 Duplication:[/bold blue]
+  • Percentage: {duplicates_result.duplication_percentage:.1f}%
+  • Blocks: {len(duplicates_result.duplicate_blocks)}
+
+[bold magenta]💀 Dead Code:[/bold magenta]
+  • Items: {deadcode_result.total_items}
+  • Functions: {len(deadcode_result.dead_functions)}
+"""
+    
+    if health_issues:
+        summary_text += f"\n[bold yellow]⚠️  Issues:[/bold yellow] {', '.join(health_issues)}"
+    
+    console.print(Panel(
+        summary_text,
+        title="[bold cyan]📋 Summary[/bold cyan]",
+        border_style="cyan",
+        padding=(1, 2),
+    ))
+    
+    # Export if requested
+    if output:
+        import json
+        export_data = {
+            "health_score": health_score,
+            "scan": {
+                "total_files": scan_result.total_files,
+                "total_lines": scan_result.total_lines,
+                "languages": len(scan_result.per_language),
+            },
+            "security": {
+                "total_issues": security_result.total_issues,
+                "critical": security_result.issues_by_severity.get("critical", 0),
+                "high": security_result.issues_by_severity.get("high", 0),
+            },
+            "dependencies": {
+                "total": dependency_result.total_dependencies,
+                "outdated": dependency_result.outdated_count,
+            },
+            "quality": {
+                "avg_complexity": quality_result.average_complexity,
+                "avg_maintainability": quality_result.average_maintainability,
+            },
+            "duplicates": {
+                "percentage": duplicates_result.duplication_percentage,
+                "blocks": len(duplicates_result.duplicate_blocks),
+            },
+            "deadcode": {
+                "total_items": deadcode_result.total_items,
+                "dead_functions": len(deadcode_result.dead_functions),
+            },
+        }
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"\n[green]✅ Exported to {output}[/green]")
 
 
 @app.command()
@@ -64,6 +234,9 @@ def scan(
     include_dependencies: bool = typer.Option(False, "--dependencies", help="Include dependency check"),
     include_quality: bool = typer.Option(False, "--quality", help="Include code quality analysis"),
     include_licenses: bool = typer.Option(False, "--licenses", help="Include license check"),
+    include_duplicates: bool = typer.Option(False, "--duplicates", help="Include code duplication detection"),
+    include_deadcode: bool = typer.Option(False, "--deadcode", help="Include dead code detection"),
+    comprehensive: bool = typer.Option(False, "--all", help="Run all analysis (comprehensive scan)"),
 ):
     """Scan a codebase and display statistics."""
     config = Config(path)
@@ -101,11 +274,22 @@ def scan(
         exporter.export_yaml(scan_result, output or Path("scan_result.yaml"))
         console.print(f"[green]Exported to {output or 'scan_result.yaml'}[/green]")
 
+    # Comprehensive mode enables all scans
+    if comprehensive:
+        include_security = True
+        include_dependencies = True
+        include_quality = True
+        include_licenses = True
+        include_duplicates = True
+        include_deadcode = True
+    
     # Additional scans if requested
     security_result = None
     dependency_result = None
     quality_result = None
     license_result = None
+    duplicates_result = None
+    deadcode_result = None
     
     if include_security:
         console.print()
@@ -151,6 +335,28 @@ def scan(
         else:
             console.print("[green]✅ No license conflicts found[/green]")
     
+    if include_duplicates:
+        console.print()
+        console.print("[cyan]🔄 Detecting code duplication...[/cyan]")
+        duplication_detector = DuplicationDetector(path)
+        duplicates_result = duplication_detector.detect()
+        
+        if duplicates_result.duplication_percentage > 10:
+            console.print(f"[yellow]⚠️  High duplication: {duplicates_result.duplication_percentage:.1f}%[/yellow]")
+        else:
+            console.print(f"[green]✅ Duplication level acceptable ({duplicates_result.duplication_percentage:.1f}%)[/green]")
+    
+    if include_deadcode:
+        console.print()
+        console.print("[cyan]💀 Detecting dead code...[/cyan]")
+        deadcode_detector = DeadCodeDetector(path)
+        deadcode_result = deadcode_detector.detect()
+        
+        if deadcode_result.total_items > 0:
+            console.print(f"[yellow]⚠️  Found {deadcode_result.total_items} dead code items[/yellow]")
+        else:
+            console.print("[green]✅ No dead code detected[/green]")
+    
     # Save to output file if specified
     if output and format == "table":
         exporter = Exporter()
@@ -194,6 +400,22 @@ def scan(
                 "project_license": license_result.project_license.name if license_result.project_license else None,
                 "incompatible_count": len(license_result.incompatible_licenses),
                 "unlicensed_count": len(license_result.unlicensed_dependencies),
+            }
+        
+        if duplicates_result:
+            export_data["duplicates"] = {
+                "duplication_percentage": duplicates_result.duplication_percentage,
+                "total_duplicates": duplicates_result.total_duplicates,
+                "duplicated_lines": duplicates_result.total_duplicated_lines,
+                "files_affected": len(duplicates_result.files_with_duplicates),
+            }
+        
+        if deadcode_result:
+            export_data["deadcode"] = {
+                "total_items": deadcode_result.total_items,
+                "dead_functions": len(deadcode_result.dead_functions),
+                "dead_classes": len(deadcode_result.dead_classes),
+                "unused_imports": len(deadcode_result.dead_imports),
             }
         
         import json
@@ -728,80 +950,182 @@ def security(
     
     console.print(summary_table)
     
-    # Show issues
+    # Show issues grouped by severity
     if result.issues:
         console.print()
-        issues_table = Table(
-            title="[bold yellow]⚠️ Security Issues[/bold yellow]",
-            show_header=True,
-            header_style="bold bright_yellow",
-            border_style="yellow",
-        )
-        issues_table.add_column("Severity", width=10)
-        issues_table.add_column("File", style="cyan", width=30, overflow="ellipsis")
-        issues_table.add_column("Line", justify="right", width=6)
-        issues_table.add_column("Issue", style="white", width=50, overflow="ellipsis")
         
-        for issue in result.issues[:50]:  # Limit display
-            severity_color = {
-                "critical": "bold red",
-                "high": "red",
-                "medium": "yellow",
-                "low": "dim white",
-            }.get(issue.severity.lower(), "white")
+        # Group issues by severity
+        issues_by_severity_group = {
+            "critical": [],
+            "high": [],
+            "medium": [],
+            "low": [],
+            "info": [],
+        }
+        
+        for issue in result.issues:
+            severity = issue.severity.lower()
+            if severity in issues_by_severity_group:
+                issues_by_severity_group[severity].append(issue)
+        
+        # Display critical and high severity issues first with full details
+        for severity_level in ["critical", "high", "medium", "low"]:
+            issues = issues_by_severity_group.get(severity_level, [])
+            if not issues:
+                continue
             
-            file_display = Path(issue.file_path).name
-            if len(file_display) > 28:
-                file_display = file_display[:25] + "..."
+            severity_colors = {
+                "critical": ("bold red", "red", "🔴"),
+                "high": ("red", "bright_red", "🟠"),
+                "medium": ("yellow", "bright_yellow", "🟡"),
+                "low": ("dim white", "white", "⚪"),
+            }
             
-            issues_table.add_row(
-                f"[{severity_color}]{issue.severity.upper()}[/{severity_color}]",
-                file_display,
-                str(issue.line_number) if issue.line_number else "-",
-                issue.description[:47] + "..." if len(issue.description) > 47 else issue.description,
+            color, border_color, emoji = severity_colors.get(severity_level, ("white", "white", "•"))
+            
+            console.print()
+            issues_table = Table(
+                title=f"[{color}]{emoji} {severity_level.upper()} Severity Issues ({len(issues)})[/{color}]",
+                show_header=True,
+                header_style=f"bold {border_color}",
+                border_style=border_color,
+                show_lines=True,
             )
-        
-        console.print(issues_table)
-        if len(result.issues) > 50:
-            console.print(f"\n[yellow]⚠️  Showing first 50 of {len(result.issues)} issues[/yellow]")
+            issues_table.add_column("File", style="cyan", width=35, overflow="ellipsis")
+            issues_table.add_column("Line", justify="right", style="bright_white", width=6)
+            issues_table.add_column("Rule ID", style="dim white", width=20)
+            issues_table.add_column("Description", style="white", width=45, overflow="ellipsis")
+            issues_table.add_column("Code Snippet", style="dim white", width=40, overflow="ellipsis")
+            
+            # Show all critical and high, limit medium and low
+            display_limit = len(issues) if severity_level in ["critical", "high"] else min(20, len(issues))
+            
+            for issue in issues[:display_limit]:
+                file_display = issue.file_path
+                if len(file_display) > 33:
+                    file_display = "..." + file_display[-30:]
+                
+                code_snippet = issue.code_snippet or ""
+                if len(code_snippet) > 37:
+                    code_snippet = code_snippet[:34] + "..."
+                
+                issues_table.add_row(
+                    file_display,
+                    str(issue.line_number) if issue.line_number else "-",
+                    issue.rule_id.replace("_", " "),
+                    issue.description,
+                    code_snippet,
+                )
+            
+            console.print(issues_table)
+            
+            if len(issues) > display_limit:
+                console.print(f"[dim]... and {len(issues) - display_limit} more {severity_level} severity issues[/dim]")
     
-    # Dependency vulnerabilities
+    # Dependency vulnerabilities - grouped by severity
     if result.dependency_vulnerabilities:
         console.print()
-        vuln_table = Table(
-            title="[bold red]🔴 Dependency Vulnerabilities[/bold red]",
-            show_header=True,
-            header_style="bold bright_red",
-            border_style="red",
-        )
-        vuln_table.add_column("Package", style="cyan", width=25)
-        vuln_table.add_column("Version", width=15)
-        vuln_table.add_column("Severity", width=10)
-        vuln_table.add_column("Advisory", style="white", width=40, overflow="ellipsis")
         
-        for vuln in result.dependency_vulnerabilities[:30]:
+        # Group vulnerabilities by severity
+        vulns_by_severity = {
+            "critical": [],
+            "high": [],
+            "moderate": [],
+            "low": [],
+            "info": [],
+        }
+        
+        for vuln in result.dependency_vulnerabilities:
             severity = vuln.get("severity", "unknown").lower()
-            severity_color = {
-                "critical": "bold red",
-                "high": "red",
-                "medium": "yellow",
-                "low": "dim white",
-            }.get(severity, "white")
-            
-            vuln_table.add_row(
-                vuln.get("package", "unknown"),
-                vuln.get("installed_version", "-"),
-                f"[{severity_color}]{severity.upper()}[/{severity_color}]",
-                vuln.get("advisory", "")[:37] + "..." if len(vuln.get("advisory", "")) > 37 else vuln.get("advisory", ""),
-            )
+            if severity == "moderate":
+                severity = "medium"
+            if severity in vulns_by_severity:
+                vulns_by_severity[severity].append(vuln)
         
-        console.print(vuln_table)
-        if len(result.dependency_vulnerabilities) > 30:
-            console.print(f"\n[yellow]⚠️  Showing first 30 of {len(result.dependency_vulnerabilities)} vulnerabilities[/yellow]")
+        # Display by severity
+        for severity_level in ["critical", "high", "medium", "low"]:
+            vulns = vulns_by_severity.get(severity_level, [])
+            if not vulns:
+                continue
+            
+            severity_colors = {
+                "critical": ("bold red", "red", "🔴"),
+                "high": ("red", "bright_red", "🟠"),
+                "medium": ("yellow", "bright_yellow", "🟡"),
+                "low": ("dim white", "white", "⚪"),
+            }
+            
+            color, border_color, emoji = severity_colors.get(severity_level, ("white", "white", "•"))
+            
+            console.print()
+            vuln_table = Table(
+                title=f"[{color}]{emoji} {severity_level.upper()} Severity Dependency Vulnerabilities ({len(vulns)})[/{color}]",
+                show_header=True,
+                header_style=f"bold {border_color}",
+                border_style=border_color,
+                show_lines=True,
+            )
+            vuln_table.add_column("Package", style="cyan", width=28)
+            vuln_table.add_column("Version", style="white", width=15)
+            vuln_table.add_column("Location", style="dim white", width=15)
+            vuln_table.add_column("CVE/CWE", style="bright_white", width=15)
+            vuln_table.add_column("Title", style="white", width=50, overflow="ellipsis")
+            
+            for vuln in vulns[:30]:
+                package = vuln.get("package", "unknown")
+                version = vuln.get("installed_version", vuln.get("version", "-"))
+                location = vuln.get("location", "root")
+                cve = vuln.get("cve", "")
+                cwe = vuln.get("cwe", [])
+                title = vuln.get("title", vuln.get("advisory", ""))
+                
+                cve_cwe_display = cve if cve else (cwe[0] if cwe else "-")
+                if len(cve_cwe_display) > 13:
+                    cve_cwe_display = cve_cwe_display[:10] + "..."
+                
+                if len(title) > 47:
+                    title = title[:44] + "..."
+                
+                vuln_table.add_row(
+                    package,
+                    version,
+                    location,
+                    cve_cwe_display,
+                    title,
+                )
+            
+            console.print(vuln_table)
+            if len(vulns) > 30:
+                console.print(f"[dim]... and {len(vulns) - 30} more {severity_level} severity vulnerabilities[/dim]")
+    
+    # Recommendations
+    if result.total_issues > 0:
+        console.print()
+        from rich.panel import Panel
+        recommendations = []
+        
+        if result.issues_by_severity.get("critical", 0) > 0:
+            recommendations.append("🔴 [bold red]CRITICAL:[/bold red] Address critical issues immediately (passwords, keys, credentials)")
+        if result.issues_by_severity.get("high", 0) > 0:
+            recommendations.append("🟠 [bold red]HIGH:[/bold red] Review and fix high severity security issues")
+        if len(result.dependency_vulnerabilities) > 0:
+            recommendations.append("📦 [bold yellow]DEPENDENCIES:[/bold yellow] Update vulnerable dependencies")
+        if result.issues_by_severity.get("medium", 0) > 0:
+            recommendations.append("🟡 [bold yellow]MEDIUM:[/bold yellow] Review medium severity issues")
+        
+        if recommendations:
+            console.print(Panel(
+                "\n".join(recommendations),
+                title="[bold cyan]💡 Recommendations[/bold cyan]",
+                border_style="cyan",
+                padding=(1, 2),
+            ))
     
     # Tools used
     if result.scan_tools:
-        console.print(f"\n[dim]Tools used: {', '.join(result.scan_tools)}[/dim]")
+        console.print(f"\n[dim]🔧 Tools used: {', '.join(result.scan_tools)}[/dim]")
+    else:
+        console.print(f"\n[dim]💡 Tip: Install external tools (bandit, safety, pip-audit) for more comprehensive scanning[/dim]")
     
     # Export if requested
     if output:
@@ -1211,6 +1535,279 @@ def licenses(
                 }
                 for dep_name, info in result.dependency_licenses.items()
             },
+        }
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"\n[green]✅ Exported to {output}[/green]")
+
+
+@app.command()
+def duplicates(
+    path: Path = typer.Argument(..., help="Path to scan for code duplication"),
+    min_lines: int = typer.Option(5, "--min-lines", help="Minimum lines for duplicate block"),
+    min_similarity: float = typer.Option(80.0, "--min-similarity", help="Minimum similarity percentage"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
+):
+    """Detect code duplication in codebase."""
+    from rich.panel import Panel
+    from rich.progress import SpinnerColumn, TextColumn
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]🔄 Code Duplication Detection[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    detector = DuplicationDetector(path, min_lines=min_lines, min_similarity=min_similarity)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task("[cyan]Detecting code duplication...", total=None)
+        result = detector.detect()
+    
+    console.print()
+    
+    # Summary
+    summary_table = Table(
+        title="[bold yellow]📊 Duplication Summary[/bold yellow]",
+        show_header=True,
+        header_style="bold bright_yellow",
+        border_style="yellow",
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=25)
+    summary_table.add_column("Value", style="bright_white", justify="right", width=15)
+    
+    summary_table.add_row("Duplicate Blocks", f"[bold]{len(result.duplicate_blocks)}[/bold]")
+    summary_table.add_row("Total Duplicates", f"[yellow]{result.total_duplicates}[/yellow]")
+    summary_table.add_row("Duplicated Lines", f"[yellow]{result.total_duplicated_lines}[/yellow]")
+    summary_table.add_row("Duplication %", f"[{'red' if result.duplication_percentage > 10 else 'yellow' if result.duplication_percentage > 5 else 'green'}]{result.duplication_percentage:.2f}%[/{'red' if result.duplication_percentage > 10 else 'yellow' if result.duplication_percentage > 5 else 'green'}]")
+    summary_table.add_row("Files Affected", f"[bold]{len(result.files_with_duplicates)}[/bold]")
+    
+    console.print(summary_table)
+    
+    # Show duplicate blocks
+    if result.duplicate_blocks:
+        console.print()
+        for idx, block in enumerate(result.duplicate_blocks[:10], 1):
+            dup_table = Table(
+                title=f"[bold blue]📋 Duplicate Block #{idx} ({block.size} lines, {block.similarity:.1f}% similar)[/bold blue]",
+                show_header=True,
+                header_style="bold bright_blue",
+                border_style="blue",
+                show_lines=True,
+            )
+            dup_table.add_column("File", style="cyan", width=35)
+            dup_table.add_column("Lines", style="white", width=15)
+            dup_table.add_column("Code Preview", style="dim white", width=50, overflow="ellipsis")
+            
+            for location in block.locations[:5]:  # Show first 5 occurrences
+                file_path, start_line, end_line = location
+                code_preview = " | ".join(block.lines[:3])
+                if len(code_preview) > 47:
+                    code_preview = code_preview[:44] + "..."
+                
+                dup_table.add_row(
+                    file_path,
+                    f"{start_line}-{end_line}",
+                    code_preview,
+                )
+            
+            console.print(dup_table)
+            if len(block.locations) > 5:
+                console.print(f"[dim]... and {len(block.locations) - 5} more occurrences[/dim]")
+            console.print()
+        
+        if len(result.duplicate_blocks) > 10:
+            console.print(f"[yellow]⚠️  Showing first 10 of {len(result.duplicate_blocks)} duplicate blocks[/yellow]")
+    
+    # Recommendations
+    if result.duplication_percentage > 10:
+        from rich.panel import Panel
+        console.print()
+        console.print(Panel(
+            "[bold yellow]💡 High duplication detected! Consider refactoring common code into functions or classes.[/bold yellow]",
+            border_style="yellow",
+        ))
+    
+    # Export if requested
+    if output:
+        import json
+        export_data = {
+            "total_duplicates": result.total_duplicates,
+            "total_duplicated_lines": result.total_duplicated_lines,
+            "duplication_percentage": result.duplication_percentage,
+            "files_with_duplicates": list(result.files_with_duplicates),
+            "duplicate_blocks": [
+                {
+                    "hash": block.hash,
+                    "size": block.size,
+                    "similarity": block.similarity,
+                    "locations": [
+                        {"file": loc[0], "start_line": loc[1], "end_line": loc[2]}
+                        for loc in block.locations
+                    ],
+                    "code": block.lines,
+                }
+                for block in result.duplicate_blocks
+            ],
+        }
+        output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
+        console.print(f"\n[green]✅ Exported to {output}[/green]")
+
+
+@app.command()
+def deadcode(
+    path: Path = typer.Argument(..., help="Path to scan for dead code"),
+    output: Optional[Path] = typer.Option(None, "--output", "-o", help="Output file for JSON report"),
+):
+    """Detect dead code (unused functions, classes, imports)."""
+    from rich.panel import Panel
+    from rich.progress import SpinnerColumn, TextColumn
+    
+    console.print()
+    console.print(Panel.fit(
+        "[bold cyan]💀 Dead Code Detection[/bold cyan]",
+        border_style="cyan"
+    ))
+    console.print()
+    
+    detector = DeadCodeDetector(path)
+    
+    with Progress(
+        SpinnerColumn(),
+        TextColumn("[progress.description]{task.description}"),
+        console=console,
+    ) as progress:
+        progress.add_task("[cyan]Detecting dead code...", total=None)
+        result = detector.detect()
+    
+    console.print()
+    
+    # Summary
+    summary_table = Table(
+        title="[bold red]📊 Dead Code Summary[/bold red]",
+        show_header=True,
+        header_style="bold bright_red",
+        border_style="red",
+    )
+    summary_table.add_column("Metric", style="bold cyan", width=25)
+    summary_table.add_column("Value", style="bright_white", justify="right", width=15)
+    
+    summary_table.add_row("Total Items", f"[bold]{result.total_items}[/bold]")
+    summary_table.add_row("Dead Functions", f"[yellow]{len(result.dead_functions)}[/yellow]")
+    summary_table.add_row("Dead Classes", f"[yellow]{len(result.dead_classes)}[/yellow]")
+    summary_table.add_row("Unused Imports", f"[dim white]{len(result.dead_imports)}[/dim white]")
+    summary_table.add_row("Unreachable Code", f"[red]{len(result.unreachable_code)}[/red]")
+    
+    console.print(summary_table)
+    
+    # Dead functions
+    if result.dead_functions:
+        console.print()
+        func_table = Table(
+            title="[bold yellow]⚠️ Dead Functions[/bold yellow]",
+            show_header=True,
+            header_style="bold bright_yellow",
+            border_style="yellow",
+        )
+        func_table.add_column("File", style="cyan", width=35)
+        func_table.add_column("Line", justify="right", width=6)
+        func_table.add_column("Function", style="white", width=30)
+        func_table.add_column("Reason", style="dim white", width=40)
+        
+        for item in result.dead_functions[:30]:
+            func_table.add_row(
+                item.file_path,
+                str(item.line_number),
+                item.name,
+                item.reason,
+            )
+        
+        console.print(func_table)
+        if len(result.dead_functions) > 30:
+            console.print(f"[dim]... and {len(result.dead_functions) - 30} more dead functions[/dim]")
+    
+    # Dead classes
+    if result.dead_classes:
+        console.print()
+        class_table = Table(
+            title="[bold yellow]⚠️ Dead Classes[/bold yellow]",
+            show_header=True,
+            header_style="bold bright_yellow",
+            border_style="yellow",
+        )
+        class_table.add_column("File", style="cyan", width=35)
+        class_table.add_column("Line", justify="right", width=6)
+        class_table.add_column("Class", style="white", width=30)
+        class_table.add_column("Reason", style="dim white", width=40)
+        
+        for item in result.dead_classes[:30]:
+            class_table.add_row(
+                item.file_path,
+                str(item.line_number),
+                item.name,
+                item.reason,
+            )
+        
+        console.print(class_table)
+        if len(result.dead_classes) > 30:
+            console.print(f"[dim]... and {len(result.dead_classes) - 30} more dead classes[/dim]")
+    
+    # Unused imports
+    if result.dead_imports:
+        console.print()
+        import_table = Table(
+            title="[bold dim]📦 Unused Imports[/bold dim]",
+            show_header=True,
+            header_style="bold dim white",
+            border_style="dim white",
+        )
+        import_table.add_column("File", style="cyan", width=35)
+        import_table.add_column("Import", style="white", width=30)
+        
+        for item in result.dead_imports[:50]:
+            import_table.add_row(
+                item.file_path,
+                item.name,
+            )
+        
+        console.print(import_table)
+        if len(result.dead_imports) > 50:
+            console.print(f"[dim]... and {len(result.dead_imports) - 50} more unused imports[/dim]")
+    
+    # Export if requested
+    if output:
+        import json
+        export_data = {
+            "total_items": result.total_items,
+            "dead_functions": [
+                {
+                    "name": item.name,
+                    "file": item.file_path,
+                    "line": item.line_number,
+                    "reason": item.reason,
+                }
+                for item in result.dead_functions
+            ],
+            "dead_classes": [
+                {
+                    "name": item.name,
+                    "file": item.file_path,
+                    "line": item.line_number,
+                    "reason": item.reason,
+                }
+                for item in result.dead_classes
+            ],
+            "unused_imports": [
+                {
+                    "name": item.name,
+                    "file": item.file_path,
+                }
+                for item in result.dead_imports
+            ],
         }
         output.write_text(json.dumps(export_data, indent=2), encoding="utf-8")
         console.print(f"\n[green]✅ Exported to {output}[/green]")

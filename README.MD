@@ -99,6 +99,27 @@
 - **Custom Hooks**: on_scan, on_export, on_edit hooks
 - **Easy Integration**: Simple plugin API
 
+### 🔄 Code Duplication Detection
+
+- **Duplicate Block Detection**: Finds repeated code blocks
+- **Similarity Analysis**: Calculates similarity percentage
+- **Multiple Occurrences**: Tracks all locations of duplicates
+- **Refactoring Suggestions**: Identifies code that should be extracted
+
+### 💀 Dead Code Detection
+
+- **Unused Functions**: Detects functions that are never called
+- **Unused Classes**: Finds classes that are never instantiated
+- **Unused Imports**: Identifies imports that are never used
+- **Unreachable Code**: Finds code that can never be executed
+
+### 🔍 Advanced Security Features
+
+- **Entropy Detection**: Finds high-entropy strings (likely secrets)
+- **File Secret Detection**: Identifies secret files (.env, keys, etc.)
+- **Git Ignore Validation**: Checks if secrets are properly ignored
+- **Pattern Matching**: 30+ security patterns for comprehensive scanning
+
 ---
 
 ## 🚀 Installation
@@ -202,6 +223,33 @@ codeatlas comments /path/to/project --tui
 codeatlas comments . --language Python --text "TODO"
 ```
 
+### 6. Detect Code Duplication
+
+```bash
+# Find duplicate code blocks
+codeatlas duplicates /path/to/project
+
+# Custom thresholds
+codeatlas duplicates . --min-lines 10 --min-similarity 90
+```
+
+### 7. Find Dead Code
+
+```bash
+# Detect unused code
+codeatlas deadcode /path/to/project
+```
+
+### 8. Comprehensive Summary
+
+```bash
+# Get complete codebase overview
+codeatlas summary /path/to/project
+
+# With export
+codeatlas summary . --output summary.json
+```
+
 ---
 
 ## 📖 Command Reference
@@ -222,14 +270,20 @@ codeatlas scan <path> [OPTIONS]
 - `--dependencies`: Include dependency analysis
 - `--quality`: Include code quality analysis
 - `--licenses`: Include license compliance check
+- `--duplicates`: Include code duplication detection
+- `--deadcode`: Include dead code detection
+- `--all`: Run all analysis (comprehensive scan)
 
 **Examples:**
 ```bash
 # Basic scan
 codeatlas scan .
 
-# Full analysis
-codeatlas scan . --security --dependencies --quality --licenses --output report.json
+# Full comprehensive analysis
+codeatlas scan . --all --output report.json
+
+# Selective analysis
+codeatlas scan . --security --quality --duplicates
 ```
 
 ---
@@ -433,6 +487,61 @@ codeatlas export <path> <output> [OPTIONS]
 **Example:**
 ```bash
 codeatlas export . report.json --format json
+```
+
+---
+
+### `duplicates` - Code Duplication Detection
+
+Detect duplicate code blocks in your codebase.
+
+```bash
+codeatlas duplicates <path> [--min-lines LINES] [--min-similarity PERCENT] [--output OUTPUT]
+```
+
+**Options:**
+- `--min-lines`: Minimum lines for duplicate block (default: 5)
+- `--min-similarity`: Minimum similarity percentage (default: 80.0)
+- `--output, -o`: Export results to JSON
+
+**Example:**
+```bash
+codeatlas duplicates . --min-lines 10 --output duplicates.json
+```
+
+---
+
+### `deadcode` - Dead Code Detection
+
+Find unused functions, classes, and imports.
+
+```bash
+codeatlas deadcode <path> [--output OUTPUT]
+```
+
+**Example:**
+```bash
+codeatlas deadcode . --output deadcode.json
+```
+
+---
+
+### `summary` - Comprehensive Summary
+
+Generate a complete codebase overview with all metrics.
+
+```bash
+codeatlas summary <path> [--output OUTPUT]
+```
+
+**Features:**
+- Health score calculation
+- All metrics in one view
+- Quick overview of codebase status
+
+**Example:**
+```bash
+codeatlas summary . --output summary.json
 ```
 
 ---
