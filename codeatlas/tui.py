@@ -43,14 +43,16 @@ if TEXTUAL_AVAILABLE:
         def on_mount(self) -> None:
             """Setup table on mount."""
             self.add_columns("File", "Line", "Language", "Preview")
-            for comment in self.comments:
+            for idx, comment in enumerate(self.comments):
                 preview = comment.content[:50] + "..." if len(comment.content) > 50 else comment.content
+                # Create unique key from file path and line number
+                unique_key = f"{comment.file_path}:{comment.line_number}:{idx}"
                 self.add_row(
                     comment.file_path,
                     str(comment.line_number),
                     comment.language,
                     preview,
-                    key=str(comment.line_number),
+                    key=unique_key,
                 )
 
 
@@ -79,85 +81,106 @@ if TEXTUAL_AVAILABLE:
 
 
     class CommentTUI(App):
-    """Textual TUI application for comment review."""
+        """Textual TUI application for comment review."""
 
-    CSS = """
-    Screen {
-        background: $surface;
-    }
-    
-    #comment-list {
-        width: 1fr;
-        height: 1fr;
-    }
-    
-    #comment-detail {
-        width: 1fr;
-        height: 1fr;
-        border: solid $primary;
-    }
-    
-    .sidebar {
-        width: 30%;
-        border-right: solid $primary;
-    }
-    
-    .main {
-        width: 70%;
-    }
-    """
+        CSS = """
+        Screen {
+            background: $surface;
+        }
+        
+        #comment-list {
+            width: 1fr;
+            height: 1fr;
+        }
+        
+        #comment-detail {
+            width: 1fr;
+            height: 1fr;
+            border: solid $primary;
+        }
+        
+        .sidebar {
+            width: 30%;
+            border-right: solid $primary;
+        }
+        
+        .main {
+            width: 70%;
+        }
+        """
 
-    BINDINGS = [
-        Binding("q", "quit", "Quit"),
-        Binding("f", "filter", "Filter"),
-        Binding("e", "edit", "Edit"),
-        Binding("d", "delete", "Delete"),
-        Binding("n", "next", "Next"),
-        Binding("p", "previous", "Previous"),
-    ]
+        BINDINGS = [
+            Binding("q", "quit", "Quit"),
+            Binding("f", "filter", "Filter"),
+            Binding("e", "edit", "Edit"),
+            Binding("d", "delete", "Delete"),
+            Binding("n", "next", "Next"),
+            Binding("p", "previous", "Previous"),
+        ]
 
-    def __init__(self, scan_result: ScanResult, *args, **kwargs):
-        """Initialize TUI with scan result."""
-        super().__init__(*args, **kwargs)
-        self.scan_result = scan_result
-        self.comments: List[Comment] = []
-        self.filtered_comments: List[Comment] = []
-        self._collect_comments()
+        def __init__(self, scan_result: ScanResult, *args, **kwargs):
+            """Initialize TUI with scan result."""
+            super().__init__(*args, **kwargs)
+            self.scan_result = scan_result
+            self.comments: List[Comment] = []
+            self.filtered_comments: List[Comment] = []
+            self._collect_comments()
 
-    def _collect_comments(self) -> None:
-        """Collect all comments from scan result."""
-        for file_stats in self.scan_result.per_file.values():
-            self.comments.extend(file_stats.comments)
-        self.filtered_comments = self.comments
+        def _collect_comments(self) -> None:
+            """Collect all comments from scan result."""
+            for file_stats in self.scan_result.per_file.values():
+                self.comments.extend(file_stats.comments)
+            self.filtered_comments = self.comments
 
-    def compose(self) -> ComposeResult:
-        """Compose the UI."""
-        yield Header()
-        with Horizontal():
-            with VerticalScroll(id="comment-list-container"):
-                yield Label("[bold]Comments[/bold]")
-                yield CommentList(self.filtered_comments, id="comment-list")
-            with VerticalScroll(id="comment-detail-container"):
-                yield Label("[bold]Comment Details[/bold]")
-                yield CommentDetail(id="comment-detail")
-        yield Footer()
+        def compose(self) -> ComposeResult:
+            """Compose the UI."""
+            yield Header()
+            with Horizontal():
+                with VerticalScroll(id="comment-list-container"):
+                    yield Label("[bold]Comments[/bold]")
+                    yield CommentList(self.filtered_comments, id="comment-list")
+                with VerticalScroll(id="comment-detail-container"):
+                    yield Label("[bold]Comment Details[/bold]")
+                    yield CommentDetail(id="comment-detail")
+            yield Footer()
 
-    def on_mount(self) -> None:
-        """Setup on mount."""
-        comment_list = self.query_one("#comment-list", CommentList)
-        if self.filtered_comments:
-            comment_list.focus()
-            self._show_comment(self.filtered_comments[0])
+        def on_mount(self) -> None:
+            """Setup on mount."""
+            comment_list = self.query_one("#comment-list", CommentList)
+            if self.filtered_comments:
+                comment_list.focus()
+                self._show_comment(self.filtered_comments[0])
 
         def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
             """Handle row selection."""
             if event.row_key:
                 try:
-                    line_num = int(str(event.row_key.value))
-                    comment = next((c for c in self.filtered_comments if c.line_number == line_num), None)
-                    if comment:
-                        self._show_comment(comment)
-                except (ValueError, AttributeError):
+                    # Extract file path and line number from the unique key
+                    key_str = str(event.row_key.value)
+                    # Key format: "file_path:line_number:index"
+                    # Use rsplit to handle file paths with colons (e.g., Windows paths)
+                    parts = key_str.rsplit(":", 2)
+                    if len(parts) >= 3:
+                        # Reconstruct file path (may contain colons)
+                        file_path = parts[0]
+                        line_num = int(parts[1])
+                        idx = int(parts[2])
+                        # Find matching comment by index (most reliable)
+                        if 0 <= idx < len(self.filtered_comments):
+                            comment = self.filtered_comments[idx]
+                            self._show_comment(comment)
+                    elif len(parts) >= 2:
+                        # Fallback: try to match by file path and line number
+                        file_path = parts[0]
+                        line_num = int(parts[1])
+                        comment = next(
+                            (c for c in self.filtered_comments 
+                             if c.file_path == file_path and c.line_number == line_num),
+                            None
+                        )
+                        if comment:
+                            self._show_comment(comment)
+                except (ValueError, AttributeError, IndexError):
                     pass
 
         def _show_comment(self, comment: Comment) -> None:

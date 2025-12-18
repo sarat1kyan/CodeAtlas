@@ -3,7 +3,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 import typer
 from rich.console import Console
@@ -214,9 +214,52 @@ def comments(
         filtered = [c for c in filtered if pattern.search(c.content)]
 
     if tui:
-        # Create temporary scan result with filtered comments
-        # (simplified - in production would properly filter)
-        launch_tui(scan_result)
+        # Pass filtered comments to TUI by updating scan_result
+        # Create a modified scan result with only filtered comments
+        from codeatlas.scanner import ScanResult as ScanResultType
+        from codeatlas.scanner import FileStats
+        
+        # Group filtered comments by file
+        filtered_by_file: Dict[str, List[Comment]] = {}
+        for comment in filtered:
+            if comment.file_path not in filtered_by_file:
+                filtered_by_file[comment.file_path] = []
+            filtered_by_file[comment.file_path].append(comment)
+        
+        # Create new per_file dict with filtered comments
+        filtered_per_file: Dict[str, FileStats] = {}
+        for file_path, file_comments in filtered_by_file.items():
+            # Get original file stats if available
+            if file_path in scan_result.per_file:
+                orig_stats = scan_result.per_file[file_path]
+                # Create new stats with filtered comments
+                filtered_per_file[file_path] = FileStats(
+                    path=orig_stats.path,
+                    size_bytes=orig_stats.size_bytes,
+                    total_lines=orig_stats.total_lines,
+                    blank_lines=orig_stats.blank_lines,
+                    comment_lines=len(file_comments),
+                    code_lines=orig_stats.code_lines,
+                    language=orig_stats.language,
+                    comments=file_comments,
+                    is_binary=orig_stats.is_binary,
+                )
+        
+        # Create filtered scan result
+        filtered_scan_result = ScanResultType(
+            base_path=scan_result.base_path,
+            total_files=len(filtered_per_file),
+            total_dirs=scan_result.total_dirs,
+            total_size_bytes=sum(s.size_bytes for s in filtered_per_file.values()),
+            total_lines=sum(s.total_lines for s in filtered_per_file.values()),
+            total_blank=sum(s.blank_lines for s in filtered_per_file.values()),
+            total_comments=len(filtered),
+            total_code=sum(s.code_lines for s in filtered_per_file.values()),
+            per_language=scan_result.per_language,
+            per_file=filtered_per_file,
+            git_info=scan_result.git_info,
+        )
+        launch_tui(filtered_scan_result)
     else:
         # Display in table
         table = Table(title=f"Comments ({len(filtered)} found)", show_header=True)

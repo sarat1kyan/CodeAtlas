@@ -190,7 +190,20 @@ class CodebaseScanner:
         lines = content.split("\n")
         total_lines = len(lines)
         blank_lines = sum(1 for line in lines if not line.strip())
-        comment_lines = len(comments)
+        
+        # Count comment lines properly (block comments span multiple lines)
+        comment_lines = 0
+        comment_line_set = set()
+        for comment in comments:
+            if comment.is_block and comment.block_start and comment.block_end:
+                # Block comment spans multiple lines
+                for line_num in range(comment.block_start, comment.block_end + 1):
+                    comment_line_set.add(line_num)
+            else:
+                # Single line comment
+                comment_line_set.add(comment.line_number)
+        comment_lines = len(comment_line_set)
+        
         code_lines = total_lines - blank_lines - comment_lines
 
         stats = FileStats(
