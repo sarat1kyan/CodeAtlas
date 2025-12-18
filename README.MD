@@ -128,10 +128,22 @@ For enhanced functionality, you can optionally install:
 pip install bandit safety pip-audit pip-licenses
 
 # Node.js tools (if working with Node.js projects)
-npm install -g license-checker
+# Option 1: Install globally (requires sudo on Linux/Mac)
+sudo npm install -g license-checker
+
+# Option 2: Install locally in your project (recommended - no sudo needed)
+npm install --save-dev license-checker
+# Then use: npx license-checker
+
+# Option 3: Use npm's built-in audit (no installation needed)
+# npm audit is built into npm, no additional installation required
 ```
 
-> **Note**: CodeAtlas works without these tools, but they enable additional features like security scanning and license checking.
+> **Note**: 
+> - CodeAtlas works without these tools, but they enable additional features like security scanning and license checking.
+> - For npm tools, if you get `EACCES: permission denied` errors, use `sudo` or install locally in your project (Option 2).
+> - `npm audit` is built into npm and works without any additional installation.
+> - Most features work without external tools - they're optional enhancements.
 
 ---
 
@@ -646,6 +658,61 @@ MIT License - see [LICENSE](LICENSE) for details.
 - GitHub: [@sarat1kyan](https://github.com/sarat1kyan)
 - Repository: [CodeAtlas](https://github.com/sarat1kyan/CodeAtlas)
 - Issues: [Report a bug](https://github.com/sarat1kyan/CodeAtlas/issues)
+
+---
+
+## 🔧 Troubleshooting
+
+### npm Permission Errors
+
+If you encounter `EACCES: permission denied` when installing npm packages globally:
+
+**Solution 1: Use sudo (Linux/Mac)**
+```bash
+sudo npm install -g license-checker
+```
+
+**Solution 2: Install locally (Recommended)**
+```bash
+# Install in your project
+npm install --save-dev license-checker
+
+# Use with npx (no global install needed)
+npx license-checker
+```
+
+**Solution 3: Fix npm permissions (Linux/Mac)**
+```bash
+# Create a directory for global packages
+mkdir ~/.npm-global
+npm config set prefix '~/.npm-global'
+
+# Add to your ~/.bashrc or ~/.zshrc
+export PATH=~/.npm-global/bin:$PATH
+```
+
+### No Dependencies Found
+
+If `codeatlas dependencies` shows 0 dependencies:
+
+- **Python projects**: Make sure `requirements.txt`, `pyproject.toml`, or `setup.py` exists
+- **Node.js projects**: Ensure `package.json` exists and has dependencies listed
+- **Empty projects**: Projects without dependencies will correctly show 0
+
+### Security Scanner Shows No Issues
+
+If `codeatlas security` shows 0 issues:
+
+- This is normal! It means no vulnerabilities were detected
+- External tools (bandit, safety) are optional - install them for more comprehensive scanning
+- Generic security checks still run without external tools
+
+### Code Quality Analysis Limited to Python
+
+Currently, code quality analysis focuses on Python files. Support for other languages is planned. The tool still provides:
+- Language detection for all files
+- File statistics for all languages
+- Security scanning for multiple languages
 
 ---
 

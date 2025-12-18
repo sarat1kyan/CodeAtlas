@@ -259,42 +259,75 @@ class SecurityScanner:
 
         return vulnerabilities
 
+    def _find_package_json_files(self) -> List[Path]:
+        """Find all package.json files recursively, including subdirectories."""
+        package_json_files: List[Path] = []
+        
+        skip_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv", "target", "build", "dist", ".pytest_cache"}
+        
+        for root, dirs, files in os.walk(self.project_path):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            
+            if "package.json" in files:
+                package_json_files.append(Path(root) / "package.json")
+        
+        return package_json_files
+
     def _scan_with_npm_audit(self) -> List[Dict[str, Any]]:
-        """Scan Node.js dependencies with npm audit."""
+        """Scan Node.js dependencies with npm audit (monorepo support)."""
         vulnerabilities: List[Dict[str, Any]] = []
-        package_json = self.project_path / "package.json"
-        if not package_json.exists():
+        package_json_files = self._find_package_json_files()
+        
+        if not package_json_files:
             return vulnerabilities
 
-        try:
-            # Run npm audit
-            result = subprocess.run(
-                ["npm", "audit", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=300,
-                cwd=self.project_path,
-            )
+        # Scan each directory with package.json
+        for package_json in package_json_files:
+            package_dir = package_json.parent
+            
+            # Skip root package.json if it has no dependencies (monorepo root)
+            try:
+                with open(package_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    deps = data.get("dependencies", {})
+                    dev_deps = data.get("devDependencies", {})
+                    if not deps and not dev_deps and package_json == self.project_path / "package.json":
+                        continue
+            except Exception:
+                pass
 
-            if result.returncode in (0, 1):
-                try:
-                    data = json.loads(result.stdout)
-                    for severity_level in ["critical", "high", "moderate", "low", "info"]:
-                        for vuln_id, vuln_data in data.get("vulnerabilities", {}).items():
-                            if vuln_data.get("severity") == severity_level:
-                                vuln = {
-                                    "package": vuln_data.get("name", vuln_id),
-                                    "severity": severity_level,
-                                    "title": vuln_data.get("title", ""),
-                                    "cwe": vuln_data.get("cwe", []),
-                                    "cve": vuln_id if vuln_id.startswith("CVE-") else None,
-                                    "dependency": vuln_data.get("via", [vuln_id])[0] if vuln_data.get("via") else vuln_id,
-                                }
-                                vulnerabilities.append(vuln)
-                except (json.JSONDecodeError, TypeError, KeyError):
-                    pass
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
-            console.print(f"[yellow]Warning: npm audit failed: {e}[/yellow]")
+            try:
+                # Run npm audit in this directory
+                result = subprocess.run(
+                    ["npm", "audit", "--json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=300,
+                    cwd=package_dir,
+                )
+
+                if result.returncode in (0, 1):
+                    try:
+                        data = json.loads(result.stdout)
+                        for severity_level in ["critical", "high", "moderate", "low", "info"]:
+                            for vuln_id, vuln_data in data.get("vulnerabilities", {}).items():
+                                if vuln_data.get("severity") == severity_level:
+                                    rel_path = package_dir.relative_to(self.project_path)
+                                    vuln = {
+                                        "package": vuln_data.get("name", vuln_id),
+                                        "severity": severity_level,
+                                        "title": vuln_data.get("title", ""),
+                                        "cwe": vuln_data.get("cwe", []),
+                                        "cve": vuln_id if vuln_id.startswith("CVE-") else None,
+                                        "dependency": vuln_data.get("via", [vuln_id])[0] if vuln_data.get("via") else vuln_id,
+                                        "location": str(rel_path) if rel_path != Path(".") else "root",
+                                    }
+                                    vulnerabilities.append(vuln)
+                    except (json.JSONDecodeError, TypeError, KeyError):
+                        pass
+            except (FileNotFoundError, subprocess.TimeoutExpired, Exception) as e:
+                rel_path = package_dir.relative_to(self.project_path)
+                console.print(f"[yellow]Warning: npm audit failed in {rel_path}: {e}[/yellow]")
 
         return vulnerabilities
 

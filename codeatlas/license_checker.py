@@ -1,6 +1,7 @@
 """License checker for analyzing project and dependency licenses."""
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -235,43 +236,74 @@ class LicenseChecker:
 
         return licenses
 
-    def _check_nodejs_licenses(self) -> Dict[str, LicenseInfo]:
-        """Check Node.js dependency licenses."""
-        licenses: Dict[str, LicenseInfo] = {}
-        package_json = self.project_path / "package.json"
+    def _find_package_json_files(self) -> List[Path]:
+        """Find all package.json files recursively."""
+        package_json_files: List[Path] = []
+        
+        skip_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv", "target", "build", "dist", ".pytest_cache"}
+        
+        for root, dirs, files in os.walk(self.project_path):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            
+            if "package.json" in files:
+                package_json_files.append(Path(root) / "package.json")
+        
+        return package_json_files
 
-        if not package_json.exists():
+    def _check_nodejs_licenses(self) -> Dict[str, LicenseInfo]:
+        """Check Node.js dependency licenses (monorepo support)."""
+        licenses: Dict[str, LicenseInfo] = {}
+        package_json_files = self._find_package_json_files()
+
+        if not package_json_files:
             return licenses
 
-        try:
-            # Try license-checker if available
-            result = subprocess.run(
-                ["license-checker", "--json"],
-                capture_output=True,
-                text=True,
-                timeout=60,
-                cwd=self.project_path,
-            )
-            if result.returncode == 0:
-                try:
-                    data = json.loads(result.stdout)
-                    for pkg_name, pkg_data in data.items():
-                        license_text = pkg_data.get("licenses", "unknown")
-                        if isinstance(license_text, list):
-                            license_text = license_text[0] if license_text else "unknown"
-                        licenses[pkg_name] = self._parse_license(str(license_text))
-                except json.JSONDecodeError:
-                    pass
-        except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
-            # Fallback: read package.json and try to infer
+        # Check each directory with package.json
+        for package_json in package_json_files:
+            package_dir = package_json.parent
+            
+            # Skip root package.json if it has no dependencies
             try:
                 with open(package_json, "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
-                    # Without license-checker, we can't easily get dependency licenses
-                    # This would require reading each package's package.json
+                    deps = data.get("dependencies", {})
+                    dev_deps = data.get("devDependencies", {})
+                    if not deps and not dev_deps and package_json == self.project_path / "package.json":
+                        continue
             except Exception:
                 pass
+
+            try:
+                # Try license-checker if available
+                result = subprocess.run(
+                    ["license-checker", "--json"],
+                    capture_output=True,
+                    text=True,
+                    timeout=60,
+                    cwd=package_dir,
+                )
+                if result.returncode == 0:
+                    try:
+                        data = json.loads(result.stdout)
+                        for pkg_name, pkg_data in data.items():
+                            license_text = pkg_data.get("licenses", "unknown")
+                            if isinstance(license_text, list):
+                                license_text = license_text[0] if license_text else "unknown"
+                            # Add location prefix to avoid conflicts
+                            key = f"{package_dir.relative_to(self.project_path)}/{pkg_name}" if package_dir != self.project_path else pkg_name
+                            licenses[key] = self._parse_license(str(license_text))
+                    except json.JSONDecodeError:
+                        pass
+            except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
+                # Fallback: read package.json and try to infer
+                try:
+                    with open(package_json, "r", encoding="utf-8") as f:
+                        data = json.load(f)
+                        deps = {**data.get("dependencies", {}), **data.get("devDependencies", {})}
+                        # Without license-checker, we can't easily get dependency licenses
+                        # This would require reading each package's package.json
+                except Exception:
+                    pass
 
         return licenses
 

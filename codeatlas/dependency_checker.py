@@ -1,6 +1,7 @@
 """Dependency checker for analyzing project dependencies."""
 
 import json
+import os
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -68,9 +69,11 @@ class DependencyChecker:
                 result.package_manager += " + npm"
             else:
                 result.package_manager = "npm"
-            if (self.project_path / "package-lock.json").exists() or (
-                self.project_path / "yarn.lock"
-            ).exists():
+            # Check for lock files in root and subdirectories
+            lock_files = list(self.project_path.glob("**/package-lock.json")) + list(self.project_path.glob("**/yarn.lock"))
+            # Filter out node_modules
+            lock_files = [f for f in lock_files if "node_modules" not in str(f)]
+            if lock_files:
                 result.lock_file_exists = True
 
         # Go dependencies
@@ -122,9 +125,24 @@ class DependencyChecker:
         """Check if this is a Rust project."""
         return (self.project_path / "Cargo.toml").exists()
 
+    def _find_requirements_files(self) -> List[Path]:
+        """Find all requirements.txt files recursively."""
+        requirements_files: List[Path] = []
+        
+        skip_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv", "target", "build", "dist", ".pytest_cache"}
+        
+        for root, dirs, files in os.walk(self.project_path):
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            
+            if "requirements.txt" in files:
+                requirements_files.append(Path(root) / "requirements.txt")
+        
+        return requirements_files
+
     def _check_python_dependencies(self) -> List[Dependency]:
-        """Check Python dependencies."""
+        """Check Python dependencies from all requirements files (monorepo support)."""
         dependencies: List[Dependency] = []
+        deps_by_name: Dict[str, Dependency] = {}
 
         # Try to get installed packages
         try:
@@ -139,19 +157,18 @@ class DependencyChecker:
                 try:
                     packages = json.loads(result.stdout)
                     for pkg in packages:
-                        dep = Dependency(
-                            name=pkg.get("name", ""),
-                            version=pkg.get("version", ""),
-                        )
-                        dependencies.append(dep)
+                        name = pkg.get("name", "")
+                        version = pkg.get("version", "")
+                        if name:
+                            deps_by_name[name.lower()] = Dependency(name=name, version=version)
                 except json.JSONDecodeError:
                     pass
         except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
             pass
 
-        # Also parse requirements.txt if it exists
-        requirements_file = self.project_path / "requirements.txt"
-        if requirements_file.exists():
+        # Parse all requirements.txt files
+        requirements_files = self._find_requirements_files()
+        for requirements_file in requirements_files:
             try:
                 with open(requirements_file, "r", encoding="utf-8") as f:
                     for line in f:
@@ -163,11 +180,12 @@ class DependencyChecker:
                                 name = parts[0].strip()
                                 version = parts[1].strip()
                                 # Check if already in dependencies
-                                existing = next((d for d in dependencies if d.name.lower() == name.lower()), None)
-                                if not existing:
-                                    dependencies.append(Dependency(name=name, version=version))
+                                if name.lower() not in deps_by_name:
+                                    deps_by_name[name.lower()] = Dependency(name=name, version=version)
             except Exception:
                 pass
+
+        dependencies = list(deps_by_name.values())
 
         # Check for outdated packages
         try:
@@ -193,37 +211,77 @@ class DependencyChecker:
 
         return dependencies
 
-    def _check_nodejs_dependencies(self) -> List[Dependency]:
-        """Check Node.js dependencies."""
-        dependencies: List[Dependency] = []
-        package_json = self.project_path / "package.json"
+    def _find_package_json_files(self) -> List[Path]:
+        """Find all package.json files recursively, including subdirectories."""
+        package_json_files: List[Path] = []
+        
+        # Skip common directories
+        skip_dirs = {".git", "__pycache__", "node_modules", ".venv", "venv", "target", "build", "dist", ".pytest_cache"}
+        
+        for root, dirs, files in os.walk(self.project_path):
+            # Filter out skipped directories
+            dirs[:] = [d for d in dirs if d not in skip_dirs]
+            
+            if "package.json" in files:
+                package_json_files.append(Path(root) / "package.json")
+        
+        return package_json_files
 
-        if not package_json.exists():
+    def _check_nodejs_dependencies(self) -> List[Dependency]:
+        """Check Node.js dependencies from all package.json files (monorepo support)."""
+        dependencies: List[Dependency] = []
+        package_json_files = self._find_package_json_files()
+
+        if not package_json_files:
             return dependencies
 
-        try:
-            with open(package_json, "r", encoding="utf-8") as f:
-                data = json.load(f)
+        # Track dependencies by name to avoid duplicates, but keep track of locations
+        deps_by_name: Dict[str, Dependency] = {}
 
-            # Get dependencies
-            deps = data.get("dependencies", {})
-            dev_deps = data.get("devDependencies", {})
-            all_deps = {**deps, **dev_deps}
+        for package_json in package_json_files:
+            try:
+                with open(package_json, "r", encoding="utf-8") as f:
+                    data = json.load(f)
 
-            for name, version_spec in all_deps.items():
-                # Clean version spec (remove ^, ~, etc.)
-                version = version_spec.replace("^", "").replace("~", "").replace(">=", "").replace("<=", "")
-                dep = Dependency(name=name, version=version)
-                dependencies.append(dep)
+                # Get dependencies
+                deps = data.get("dependencies", {})
+                dev_deps = data.get("devDependencies", {})
+                all_deps = {**deps, **dev_deps}
 
-            # Check for outdated packages
+                # Skip if this is just a root package.json with no dependencies (monorepo root)
+                if not all_deps and package_json == self.project_path / "package.json":
+                    continue
+
+                for name, version_spec in all_deps.items():
+                    # Clean version spec (remove ^, ~, etc.)
+                    version = version_spec.replace("^", "").replace("~", "").replace(">=", "").replace("<=", "")
+                    
+                    # If we've seen this dependency before, keep the first one or merge info
+                    if name not in deps_by_name:
+                        dep = Dependency(name=name, version=version)
+                        deps_by_name[name] = dep
+                    else:
+                        # Update if we have a more specific version
+                        existing = deps_by_name[name]
+                        if version and version != "unknown" and existing.version == "unknown":
+                            existing.version = version
+
+            except Exception as e:
+                rel_path = package_json.relative_to(self.project_path)
+                console.print(f"[yellow]Warning: Failed to parse {rel_path}: {e}[/yellow]")
+
+        dependencies = list(deps_by_name.values())
+
+        # Check for outdated packages in each directory with package.json
+        for package_json in package_json_files:
+            package_dir = package_json.parent
             try:
                 result = subprocess.run(
                     ["npm", "outdated", "--json"],
                     capture_output=True,
                     text=True,
                     timeout=60,
-                    cwd=self.project_path,
+                    cwd=package_dir,
                 )
                 if result.returncode != 0:  # npm outdated returns non-zero when outdated packages exist
                     try:
@@ -232,14 +290,12 @@ class DependencyChecker:
                             existing = next((d for d in dependencies if d.name == name), None)
                             if existing:
                                 existing.is_outdated = True
-                                existing.latest_version = info.get("latest", "")
+                                if not existing.latest_version:
+                                    existing.latest_version = info.get("latest", "")
                     except json.JSONDecodeError:
                         pass
             except (FileNotFoundError, subprocess.TimeoutExpired, Exception):
                 pass
-
-        except Exception as e:
-            console.print(f"[yellow]Warning: Failed to parse package.json: {e}[/yellow]")
 
         return dependencies
 
