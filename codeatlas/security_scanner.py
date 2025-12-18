@@ -432,8 +432,9 @@ class SecurityScanner:
             # Encryption Keys
             (r"(?i)(encryption[_-]?key|enc[_-]?key|cipher[_-]?key|secret[_-]?key)\s*[=:]\s*['\"]([^'\"]{10,})['\"]", "encryption_key"),
             
-            # Generic Secrets
-            (r"(?i)(secret|secret_key|secretkey)\s*[=:]\s*['\"]([^'\"]{8,})['\"]", "hardcoded_secret"),
+            # Generic Secrets (more specific - avoid matching "keywords", "secretary", etc.)
+            (r"(?i)(secret[_-]?key|secretkey)\s*[=:]\s*['\"]([^'\"]{8,})['\"]", "hardcoded_secret"),
+            (r"(?i)^\s*secret\s*[=:]\s*['\"]([^'\"]{8,})['\"]", "hardcoded_secret"),  # Only at start of line
             
             # SQL Injection patterns
             (r"(?i)(execute|query|exec)\s*\(\s*['\"].*%[sd].*['\"]", "sql_injection_risk"),
@@ -453,8 +454,8 @@ class SecurityScanner:
             # Weak cryptography
             (r"(?i)(md5|sha1)\s*\(", "weak_cryptography"),
             
-            # Debug code left in production
-            (r"(?i)(console\.log|print|debugger|var_dump)\s*\([^)]*password|secret|key", "debug_code_with_secrets"),
+            # Debug code left in production (more specific - must have assignment or value)
+            (r"(?i)(console\.log|print|debugger|var_dump)\s*\([^)]*(password|secret|key)\s*[=:]\s*['\"]", "debug_code_with_secrets"),
             
             # Environment files with secrets
             (r"(?i)\.env.*['\"](password|secret|key|token)", "env_file_secret"),
@@ -488,6 +489,9 @@ class SecurityScanner:
                     except Exception:
                         continue
                     
+                    # Skip package.json and similar files for certain patterns (they have too many false positives)
+                    is_json_config = file.lower() in ["package.json", "package-lock.json", "tsconfig.json", "jsconfig.json", "composer.json", "pom.xml"]
+                    
                     try:
                         with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
                             content = f.read()
@@ -504,9 +508,32 @@ class SecurityScanner:
                                     else:
                                         continue
                                 
+                                # Skip common JSON patterns that cause false positives
+                                if is_json_config:
+                                    # Skip lines that are clearly not secrets (like "keywords", "description", etc.)
+                                    json_key_pattern = r'^\s*"(keywords|description|name|version|author|license|homepage|repository|main|scripts|dependencies|devDependencies|engines|bin|files|directories)"\s*:'
+                                    if re.match(json_key_pattern, line, re.IGNORECASE):
+                                        continue
+                                    # Skip array/list items that are just strings
+                                    if re.match(r'^\s*"[^"]+",?\s*$', line):
+                                        continue
+                                
                                 for pattern, rule_id in security_patterns:
                                     match = re.search(pattern, line)
                                     if match:
+                                        # Additional filtering for JSON files to reduce false positives
+                                        if is_json_config:
+                                            # Skip if it's just a JSON key like "keywords", "private", etc.
+                                            if re.match(r'^\s*"[^"]*(key|secret|token|password)[^"]*"\s*:\s*\[', line, re.IGNORECASE):
+                                                continue
+                                            # Skip if it's a JSON key without a value that looks like a secret
+                                            if rule_id == "debug_code_with_secrets":
+                                                # Only match if it's actually debug code, not just a JSON key
+                                                if not re.search(r'(console\.log|print|debugger|var_dump)', line, re.IGNORECASE):
+                                                    continue
+                                            # Skip generic "secret" pattern if it's just a JSON key name
+                                            if rule_id == "hardcoded_secret" and re.match(r'^\s*"[^"]*secret[^"]*"\s*:\s*\[', line, re.IGNORECASE):
+                                                continue
                                         # Determine severity and description
                                         if rule_id in ["hardcoded_password", "aws_credentials", "private_key_exposed", "private_key_file"]:
                                             severity = "critical"

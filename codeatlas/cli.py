@@ -325,10 +325,10 @@ def scan(
         
         if quality_result.average_complexity > 10:
             console.print(f"[yellow]⚠️  High average complexity: {quality_result.average_complexity:.1f}[/yellow]")
-            # Display detailed quality results
-            _display_quality_details(quality_result)
         else:
             console.print(f"[green]✅ Code quality looks good (complexity: {quality_result.average_complexity:.1f})[/green]")
+        # Always display detailed quality results
+        _display_quality_details(quality_result)
     
     if include_licenses:
         console.print()
@@ -471,9 +471,13 @@ def _display_security_details(result) -> None:
                 issues_by_severity_group[severity].append(issue)
         
         for severity_level in ["critical", "high"]:
-            issues = issues_by_severity_group.get(severity_level, [])[:10]  # Limit to 10
+            issues = issues_by_severity_group.get(severity_level, [])
             if not issues:
                 continue
+            
+            # Show all critical, limit high to 20
+            display_limit = len(issues) if severity_level == "critical" else min(20, len(issues))
+            display_issues = issues[:display_limit]
             
             color, border_color, emoji = {
                 "critical": ("bold red", "red", "🔴"),
@@ -481,8 +485,9 @@ def _display_security_details(result) -> None:
             }.get(severity_level, ("white", "white", "•"))
             
             console.print()
+            title_suffix = f" (showing {display_limit} of {len(issues)})" if len(issues) > display_limit else f" ({len(issues)})"
             issues_table = Table(
-                title=f"[{color}]{emoji} {severity_level.upper()} Issues (showing top 10)[/{color}]",
+                title=f"[{color}]{emoji} {severity_level.upper()} Issues{title_suffix}[/{color}]",
                 show_header=True,
                 header_style=f"bold {border_color}",
                 border_style=border_color,
@@ -491,7 +496,7 @@ def _display_security_details(result) -> None:
             issues_table.add_column("Line", justify="right", width=6)
             issues_table.add_column("Description", style="white", width=50, overflow="ellipsis")
             
-            for issue in issues:
+            for issue in display_issues:
                 file_display = issue.file_path
                 if len(file_display) > 28:
                     file_display = "..." + file_display[-25:]
@@ -503,8 +508,81 @@ def _display_security_details(result) -> None:
                 )
             
             console.print(issues_table)
-            if len(issues_by_severity_group.get(severity_level, [])) > 10:
-                console.print(f"[dim]... and {len(issues_by_severity_group[severity_level]) - 10} more {severity_level} issues[/dim]")
+            if len(issues) > display_limit:
+                console.print(f"[dim]... and {len(issues) - display_limit} more {severity_level} issues[/dim]")
+    
+    # Dependency vulnerabilities
+    if result.dependency_vulnerabilities:
+        console.print()
+        # Group vulnerabilities by severity
+        vulns_by_severity = {
+            "critical": [],
+            "high": [],
+            "moderate": [],
+            "low": [],
+        }
+        
+        for vuln in result.dependency_vulnerabilities:
+            severity = vuln.get("severity", "unknown").lower()
+            if severity == "moderate":
+                severity = "medium"
+            if severity in vulns_by_severity:
+                vulns_by_severity[severity].append(vuln)
+        
+        # Display high and critical vulnerabilities
+        for severity_level in ["critical", "high"]:
+            vulns = vulns_by_severity.get(severity_level, [])[:15]  # Limit to 15
+            if not vulns:
+                continue
+            
+            color, border_color, emoji = {
+                "critical": ("bold red", "red", "🔴"),
+                "high": ("red", "bright_red", "🟠"),
+            }.get(severity_level, ("white", "white", "•"))
+            
+            console.print()
+            vuln_table = Table(
+                title=f"[{color}]{emoji} {severity_level.upper()} Dependency Vulnerabilities (showing {len(vulns)})[/{color}]",
+                show_header=True,
+                header_style=f"bold {border_color}",
+                border_style=border_color,
+            )
+            vuln_table.add_column("Package", style="cyan", width=25)
+            vuln_table.add_column("Location", style="dim white", width=15)
+            vuln_table.add_column("CVE/CWE", style="bright_white", width=15)
+            vuln_table.add_column("Title", style="white", width=45, overflow="ellipsis")
+            
+            for vuln in vulns:
+                package = vuln.get("package", "unknown")
+                location = vuln.get("location", "root")
+                dep_info = vuln.get("dependency", {})
+                if isinstance(dep_info, dict):
+                    cve = dep_info.get("cve", "")
+                    cwe = dep_info.get("cwe", [])
+                    title = dep_info.get("title", "")
+                else:
+                    cve = vuln.get("cve", "")
+                    cwe = vuln.get("cwe", [])
+                    title = vuln.get("title", "")
+                
+                cve_cwe_display = cve if cve else (cwe[0] if cwe else "-")
+                if len(cve_cwe_display) > 13:
+                    cve_cwe_display = cve_cwe_display[:10] + "..."
+                
+                if len(title) > 42:
+                    title = title[:39] + "..."
+                
+                vuln_table.add_row(
+                    package,
+                    location,
+                    cve_cwe_display,
+                    title,
+                )
+            
+            console.print(vuln_table)
+            total_vulns = len(vulns_by_severity.get(severity_level, []))
+            if total_vulns > 15:
+                console.print(f"[dim]... and {total_vulns - 15} more {severity_level} vulnerabilities[/dim]")
 
 
 def _display_dependencies_details(result) -> None:
@@ -540,9 +618,9 @@ def _display_dependencies_details(result) -> None:
 
 def _display_quality_details(result) -> None:
     """Display detailed quality results."""
-    from codeatlas.code_quality import QualityAnalysisResult
+    from codeatlas.code_quality import CodeQualityResult
     
-    if not isinstance(result, QualityAnalysisResult):
+    if not isinstance(result, CodeQualityResult):
         return
     
     if result.per_file_metrics:
